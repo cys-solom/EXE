@@ -1,0 +1,19 @@
+{
+  "name": "kokoro-shop-lite",
+  "version": "1.0.0",
+  "description": "Bot de tienda de Telegram — version Lite (revendedor KOKORO)",
+  "main": "botlite.js",
+  "scripts": {
+    "start": "node start.js",
+    "bot": "node botlite.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "dotenv": "^16.4.5",
+    "node-telegram-bot-api": "^0.66.0",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

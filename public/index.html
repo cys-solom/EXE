@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة التحكم — المتجر</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- شاشة الدخول -->
+<div id="loginScreen" class="login-screen">
+  <form id="loginForm" class="login-card">
+    <div class="login-logo">🛍️</div>
+    <h1>لوحة تحكم المتجر</h1>
+    <p class="muted">سجّل الدخول لإدارة المتجر</p>
+    <label>اسم المستخدم</label>
+    <input type="text" id="loginUser" autocomplete="username" required>
+    <label>كلمة المرور</label>
+    <input type="password" id="loginPass" autocomplete="current-password" required>
+    <button type="submit" class="btn btn-primary btn-block">دخول</button>
+    <div id="loginError" class="form-error"></div>
+  </form>
+</div>
+
+<!-- التطبيق -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="sidebar-brand">🛍️ <span>لوحة التحكم</span></div>
+    <nav class="nav">
+      <button class="nav-item active" data-tab="dashboard">📊 لوحة التحكم</button>
+      <button class="nav-item" data-tab="broadcast">📣 بث رسالة</button>
+      <button class="nav-item" data-tab="products">📦 منتجات KOKORO</button>
+      <button class="nav-item" data-tab="manual">🧩 منتجاتي اليدوية</button>
+      <button class="nav-item" data-tab="users">👥 المستخدمين</button>
+      <button class="nav-item" data-tab="orders">🧾 الطلبات</button>
+      <button class="nav-item" data-tab="transactions">💳 المعاملات</button>
+      <button class="nav-item" data-tab="activation">📧 التفعيل بالبريد</button>
+    </nav>
+    <button id="logoutBtn" class="btn btn-ghost btn-block">🚪 تسجيل الخروج</button>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button id="menuToggle" class="menu-toggle">☰</button>
+      <h2 id="pageTitle">لوحة التحكم</h2>
+      <button id="refreshBtn" class="btn btn-ghost">🔄 تحديث</button>
+    </header>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <section id="tab-dashboard" class="tab active">
+      <div id="dashboardStats" class="stats-grid"></div>
+    </section>
+
+    <section id="tab-broadcast" class="tab">
+      <div class="table-wrap" style="padding:20px; display:flex; flex-direction:column; gap:14px; max-width:560px;">
+        <div>
+          <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px">الوجهة</label>
+          <select id="bcTarget" style="width:100%">
+            <option value="all">كل العملاء</option>
+            <option value="user">عميل محدد (بالـ ID)</option>
+          </select>
+        </div>
+        <div id="bcUserIdWrap" class="hidden">
+          <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px">ID العميل</label>
+          <input type="text" id="bcUserId" placeholder="مثال: 123456789">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px">نص الرسالة</label>
+          <textarea id="bcMessage" style="min-height:130px" placeholder="اكتب رسالتك هنا... (يدعم HTML البسيط مثل &lt;b&gt;غامق&lt;/b&gt;)"></textarea>
+        </div>
+        <button id="bcSendBtn" class="btn btn-primary">📣 إرسال</button>
+        <div id="bcResult" class="muted"></div>
+      </div>
+    </section>
+
+    <section id="tab-products" class="tab">
+      <div class="toolbar">
+        <input type="text" id="productsSearch" placeholder="ابحث باسم المنتج...">
+      </div>
+      <div class="table-wrap"><table id="productsTable"><thead><tr>
+        <th>اسم API (الأصلي)</th><th>الاسم المعروض للعميل</th><th>السعر (مايسترو)</th><th>السعر للعميل</th><th>المخزون</th><th>الهامش %</th><th>مفعّل</th><th>إيموجي</th><th></th>
+      </tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="tab-manual" class="tab">
+      <div class="toolbar">
+        <button id="addManualBtn" class="btn btn-primary">+ منتج جديد</button>
+      </div>
+      <div class="table-wrap"><table id="manualTable"><thead><tr>
+        <th>المنتج</th><th>السعر</th><th>الحد الأدنى</th><th>المخزون المتاح</th><th>مفعّل</th><th></th>
+      </tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="tab-users" class="tab">
+      <div class="toolbar">
+        <input type="text" id="usersSearch" placeholder="ابحث بالـ ID أو اليوزر...">
+      </div>
+      <div class="table-wrap"><table id="usersTable"><thead><tr>
+        <th>ID</th><th>اليوزر</th><th>اللغة</th><th>الرصيد</th><th>تاريخ التسجيل</th><th></th>
+      </tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="tab-orders" class="tab">
+      <div class="toolbar">
+        <input type="text" id="ordersSearch" placeholder="ابحث برقم الطلب أو ID العميل أو اسم المنتج...">
+        <select id="ordersStatusFilter">
+          <option value="">كل الحالات</option>
+          <option value="processing">قيد المعالجة</option>
+          <option value="paid">مدفوع (بانتظار تسليم يدوي)</option>
+          <option value="delivered">تم التسليم</option>
+          <option value="cancelled">ملغي</option>
+        </select>
+      </div>
+      <div class="table-wrap"><table id="ordersTable"><thead><tr>
+        <th>#</th><th>العميل</th><th>المنتج</th><th>الكمية</th><th>الإجمالي</th><th>طريقة الدفع</th><th>الحالة</th><th>التاريخ</th><th></th>
+      </tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="tab-transactions" class="tab">
+      <div class="table-wrap"><table id="transactionsTable"><thead><tr>
+        <th>العميل</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th>
+      </tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="tab-activation" class="tab">
+      <p class="muted">المنتجات هنا لا تُسلَّم تلقائياً — البوت يطلب من العميل بريده/يوزره وتفعّله يدوياً.</p>
+      <div class="toolbar">
+        <input type="text" id="activationInput" placeholder="اسم المنتج بالضبط (مطابقة كاملة)...">
+        <button id="addActivationBtn" class="btn btn-primary">+ إضافة</button>
+      </div>
+      <div class="table-wrap"><table id="activationTable"><thead><tr>
+        <th>اسم المنتج</th><th></th>
+      </tr></thead><tbody></tbody></table></div>
+    </section>
+  </main>
+</div>
+
+<!-- مودال عام -->
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle"></h3>
+      <button id="modalClose" class="modal-close">✕</button>
+    </div>
+    <div id="modalBody" class="modal-body"></div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

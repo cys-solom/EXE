@@ -1,0 +1,9 @@
+# NUNCA subir credenciales ni dependencias
+.env
+node_modules/
+*.log
+_devserver.local.js
+
+# api/ y public/ son el panel admin (se despliega aparte, en Vercel) — no hace falta en Railway
+api/
+public/

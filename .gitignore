@@ -1,0 +1,6 @@
+# NUNCA subir credenciales ni dependencias
+.env
+node_modules/
+*.log
+_devserver.local.js
+.claude/

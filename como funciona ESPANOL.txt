@@ -1,0 +1,146 @@
+🤝 BIENVENIDO COMO REVENDEDOR KOKORO SHOP 🤝
+
+═══════════════════════════════════════════════════════════════════
+
+¿COMO FUNCIONA?
+
+Tu bot está 100% sincronizado conmigo. Cuando tú vendes un producto a tus clientes,
+mi bot hace la compra automáticamente en tu nombre.
+
+═══════════════════════════════════════════════════════════════════
+
+✅ QUE SE SINCRONIZA AUTOMATICAMENTE
+
+📦 Productos (stock, precio, cambios)
+💰 Markup/Inflación (ganancias por cada venta)
+📊 Estado (habilitar/deshabilitar productos)
+🔄 Todo en TIEMPO REAL
+
+═══════════════════════════════════════════════════════════════════
+
+💰 COMO GANAS DINERO (EJEMPLO)
+
+Cliente compra "Spotify 6M" en tu bot:
+
+1. El cliente VE en tu tienda: $13.00
+   (Precio base $10 × 1.30 markup = $13)
+
+2. El cliente TE PAGA: $13.00 USDT
+   (A tu wallet personal)
+
+3. TU BOT COMPRA EN MI BOT AUTOMATICAMENTE
+   Se descuenta de tu saldo conmigo: $10.00
+
+4. RESULTADO:
+   ✅ Tu wallet: +$13.00 (del cliente)
+   ✅ Mi bot: -$10.00 (tu costo)
+   ✅ TU GANANCIA: $3.00
+
+═══════════════════════════════════════════════════════════════════
+
+⚙️ QUE PUEDES HACER
+
+✅ Cambiar el markup (inflación) de cada producto
+   • Por defecto: 30%
+   • Personalizable por producto
+   • Ejemplo: vende a 50% en lugar de 30%
+
+✅ Habilitar/Deshabilitar productos
+   • Muestra/oculta productos en tu tienda
+   • Útil para pausar sin eliminar
+
+✅ Agregar tus propios productos
+   • Tus códigos, cursos, servicios
+   • Con tu propio precio
+   • Tu propio margen de ganancia
+
+═══════════════════════════════════════════════════════════════════
+
+⚠️ REQUISITO IMPORTANTE: MANTÉN SALDO CONMIGO
+
+Para que todo funcione, NECESITAS tener saldo en mi bot.
+
+¿Por qué?
+Cuando tu cliente compra, mi bot descuenta el costo de tu saldo
+para hacerse con el producto.
+
+EJEMPLO DE LO QUE NO FUNCIONA:
+
+Cliente paga: $13.00 ✅
+Tu bot intenta comprar por $10: ❌ NO TIENES SALDO
+Cliente NO recibe nada
+TÚ DEBES REEMBOLSAR AL CLIENTE MANUALMENTE
+
+¿COMO EVITARLO?
+
+📊 Calcula tu volumen de ventas diarias
+💳 Carga saldo 2-3x tu volumen diario
+🔍 Verifica tu saldo antes de promocionar
+✅ Mantén un buffer siempre activo
+
+═══════════════════════════════════════════════════════════════════
+
+🔄 FLUJO COMPLETO
+
+Cliente compra en tu bot
+        ↓
+Cliente te paga $13.00 a tu wallet ✅
+        ↓
+Mi bot automáticamente:
+  • Descuenta $10 de tu saldo conmigo
+  • Compra el producto
+        ↓
+Cliente recibe el producto (automático)
+        ↓
+TÚ GANASTE: $3.00 (la diferencia)
+
+═══════════════════════════════════════════════════════════════════
+
+✅ PARA EMPEZAR
+
+□ Recibí mis credenciales
+□ Mi bot está sincronizado
+□ Revisé los productos disponibles
+□ Configuré mi markup (default 30%)
+□ Cargué saldo en mi cuenta
+□ Agregué mis productos (si aplica)
+□ Probé una compra de prueba
+□ Entiendo que debo mantener saldo
+
+═══════════════════════════════════════════════════════════════════
+
+❓ PREGUNTAS FRECUENTES
+
+P: ¿Qué pasa si compran pero no tengo saldo?
+R: La compra falla y debes reembolsar. MANTÉN SALDO SIEMPRE.
+
+P: ¿Puedo cambiar el markup después?
+R: Sí, pero solo afecta nuevas compras.
+
+P: ¿Los precios se actualizan automáticamente?
+R: Sí, en tiempo real.
+
+P: ¿Cuánto tarda la entrega?
+R: Automática en segundos después del pago.
+
+P: ¿Puedo vender productos míos + tuyos?
+R: Sí, puedes combinar ambos.
+
+═══════════════════════════════════════════════════════════════════
+
+📞 SOPORTE
+
+Si tienes dudas:
+• Configuración
+• Cambio de precios
+• Problemas con pagos
+• Agregar productos
+
+Contacta a: [COMPLETA CON TU CONTACTO]
+
+═══════════════════════════════════════════════════════════════════
+
+¡A VENDER! 🎉
+
+Estamos para apoyarte en tu negocio.
+Bienvenido al equipo KOKORO SHOP.

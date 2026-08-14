@@ -1,0 +1,127 @@
+🤝 WELCOME AS A KOKORO SHOP RESELLER 🤝
+
+═══════════════════════════════════════════════════════════════════
+
+HOW IT WORKS?
+
+Your bot is 100% synchronized with me. When you sell a product to your customers,
+my bot automatically makes the purchase on your behalf.
+
+═══════════════════════════════════════════════════════════════════
+
+✅ WHAT SYNCS AUTOMATICALLY
+
+📦 Products (stock, price, changes)
+💰 Markup/Inflation (earnings per sale)
+📊 Status (enable/disable products)
+🔄 All in REAL TIME
+
+═══════════════════════════════════════════════════════════════════
+
+💰 HOW YOU MAKE MONEY (EXAMPLE)
+
+Customer buys "Spotify 6M" in your bot:
+
+1. Customer SEES in your store: $13.00
+   (Base price $10 × 1.30 markup = $13)
+
+2. Customer PAYS YOU: $13.00 USDT
+   (To your personal wallet)
+
+3. YOUR BOT AUTOMATICALLY BUYS FROM MY BOT
+   Deducted from your balance with me: $10.00
+
+4. RESULT:
+   ✅ Your wallet: +$13.00 (from customer)
+   ✅ My bot: -$10.00 (your cost)
+   ✅ YOUR PROFIT: $3.00
+
+═══════════════════════════════════════════════════════════════════
+
+⚙️ WHAT YOU CAN DO
+
+✅ Change the markup (inflation) of each product
+   • Default: 30%
+   • Customizable per product
+   • Example: sell at 50% instead of 30%
+
+✅ Enable/Disable products
+   • Show/hide products in your store
+   • Useful to pause without deleting
+
+✅ Add your own products
+   • Your codes, courses, services
+   • With your own price
+   • Your own profit margin
+
+═══════════════════════════════════════════════════════════════════
+
+⚠️ IMPORTANT REQUIREMENT: KEEP BALANCE WITH ME
+
+For everything to work, YOU NEED to have a balance in my bot.
+
+Why?
+When your customer buys, my bot deducts the cost from your balance
+to get the product.
+
+EXAMPLE OF WHAT DOESN'T WORK:
+
+Customer pays: $13.00 ✅
+Your bot tries to buy for $10: ❌ YOU DON'T HAVE BALANCE
+Customer doesn't receive anything
+YOU MUST REFUND THE CUSTOMER MANUALLY
+
+HOW TO AVOID IT?
+
+📊 Calculate your daily sales volume
+💳 Load balance 2-3x your daily volume
+🔍 Check your balance before promoting
+✅ Keep a buffer always active
+
+═══════════════════════════════════════════════════════════════════
+
+🔄 COMPLETE FLOW
+
+Customer buys in your bot
+        ↓
+Customer pays you $13.00 to your wallet ✅
+        ↓
+My bot automatically:
+  • Deducts $10 from your balance with me
+  • Buys the product
+        ↓
+Customer receives the product (automatic)
+        ↓
+YOU EARNED: $3.00 (the difference)
+
+═══════════════════════════════════════════════════════════════════
+
+✅ TO GET STARTED
+
+□ I received my credentials
+□ My bot is synchronized
+□ I reviewed the available products
+□ I configured my markup (default 30%)
+□ I loaded balance in my account
+□ I added my products (if applicable)
+□ I tested a test purchase
+□ I understand I must keep balance
+
+═══════════════════════════════════════════════════════════════════
+
+❓ FREQUENTLY ASKED QUESTIONS
+
+Q: What happens if they buy but I don't have balance?
+A: The purchase fails and you must refund. ALWAYS KEEP BALANCE.
+
+Q: Can I change the markup later?
+A: Yes, but it only affects new purchases.
+
+Q: Do prices update automatically?
+A: Yes, in real time.
+
+Q: How long does delivery take?
+A: Automatic in seconds after payment.
+
+Q: Can I sell my products + yours?
+A: Yes, you can combine both.
