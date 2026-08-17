@@ -1353,10 +1353,17 @@ function randomOrderCode() {
   for (let i = 0; i < 6; i++) s += ORDER_CODE_CHARS[Math.floor(Math.random() * ORDER_CODE_CHARS.length)];
   return `${ORDER_CODE_PREFIX}-${s}`;
 }
+// Devuelve un codigo listo para usar, o null si la columna order_code todavia
+// no existe (falta correr setup.sql) — en ese caso el insert simplemente
+// omite el campo en vez de fallar la orden entera por esto.
 async function generateUniqueOrderCode() {
   for (let i = 0; i < 6; i++) {
     const code = randomOrderCode();
-    const { data } = await supabase.from("orders").select("id").eq("order_code", code).maybeSingle();
+    const { data, error } = await supabase.from("orders").select("id").eq("order_code", code).maybeSingle();
+    if (error) {
+      console.error("[ORDER CODE] no se pudo verificar (¿falta correr setup.sql?):", error.message);
+      return null;
+    }
     if (!data) return code;
   }
   return `${ORDER_CODE_PREFIX}-${Date.now().toString(36).toUpperCase().slice(-6)}`; // fallback ultra raro
@@ -1501,11 +1508,21 @@ async function buyWithBalance(chatId, messageId, index, qty) {
 
   await editOrSend(chatId, messageId, `${tg("🔄", ICON("REFRESH"))} <b>${t.processingOrder}</b>`, []);
 
-  const { data: order } = await supabase.from("orders").insert({
+  const newOrderCode = await generateUniqueOrderCode();
+  const { data: order, error: orderErr } = await supabase.from("orders").insert({
     telegram_id: chatId, product_id: String(p.id), product_name: p.name, quantity: qty,
     price: p.price, total, status: "paid", payment_method: "balance", source: p.kind === "manual" ? "manual" : "kokoro_api",
-    order_code: await generateUniqueOrderCode()
+    ...(newOrderCode ? { order_code: newOrderCode } : {})
   }).select().single();
+
+  if (!order) {
+    // No se pudo crear la orden (ej. columna faltante, DB caida): reembolsar YA
+    // y avisar, en vez de seguir con una compra sin registro en la base.
+    await creditBalance(chatId, total, "Reembolso: no se pudo crear la orden");
+    console.error("[ORDER INSERT]", orderErr?.message);
+    await sendAdminLog(`🛑 <b>FALLO AL CREAR ORDEN (Balance)</b>\n\n👤 @${getUsername(chatId)}\n🆔 ${chatId}\n📦 ${p.name}\n❌ ${htmlEscape(orderErr?.message || "sin detalle")}`);
+    return editOrSend(chatId, messageId, `${tg("⚠️", ICON("ATENTION"))} Error, intenta de nuevo.`, [[styledButton(t.back, `qty_${index}_${qty}`, "danger", ICON("BACK"))]]);
+  }
 
   // Productos de activacion manual: en vez de entregar, se le pide el correo
   // (o el @usuario) al cliente. La orden queda pagada, no entregada.
@@ -1554,10 +1571,11 @@ async function showBinancePayment(chatId, messageId, index, qty) {
 
   // Cancelar ordenes viejas en espera de este usuario, y crear la orden AHORA (waiting_payment)
   await supabase.from("orders").update({ status: "cancelled" }).eq("telegram_id", chatId).eq("status", "waiting_payment");
+  const newOrderCode = await generateUniqueOrderCode();
   const { data: order } = await supabase.from("orders").insert({
     telegram_id: chatId, product_id: String(p.id), product_name: p.name, quantity: qty,
     price: p.price, total, status: "waiting_payment", payment_method: "binance_pay", source: p.kind === "manual" ? "manual" : "kokoro_api",
-    order_code: await generateUniqueOrderCode()
+    ...(newOrderCode ? { order_code: newOrderCode } : {})
   }).select().single();
 
   sess(chatId).awaiting = "purchase_binance_orderid";
@@ -1593,10 +1611,11 @@ async function showBep20PaymentDirect(chatId, messageId, index, qty) {
   const pe = productTextEmoji(p.name);
 
   // Crear orden pendiente + pendiente BEP20 con monto unico
+  const newOrderCode = await generateUniqueOrderCode();
   const { data: order } = await supabase.from("orders").insert({
     telegram_id: chatId, product_id: String(p.id), product_name: p.name, quantity: qty,
     price: p.price, total, status: "processing", payment_method: "bep20", source: p.kind === "manual" ? "manual" : "kokoro_api",
-    order_code: await generateUniqueOrderCode()
+    ...(newOrderCode ? { order_code: newOrderCode } : {})
   }).select().single();
 
   const { montoUnico } = await payments.createBep20Pending(supabase, { telegram_id: chatId, type: "purchase", order_id: order?.id, base: total });
@@ -1676,10 +1695,11 @@ async function confirmPurchaseBinance(chatId, orderId) {
     order = data;
   }
   if (!order) {
+    const newOrderCode = await generateUniqueOrderCode();
     const { data } = await supabase.from("orders").insert({
       telegram_id: chatId, product_id: String(p.id), product_name: p.name, quantity: pp.qty,
       price: p.price, total: pp.total, status: "paid", payment_method: "binance_pay", source: p.kind === "manual" ? "manual" : "kokoro_api", payment_order_id: clean,
-      order_code: await generateUniqueOrderCode()
+      ...(newOrderCode ? { order_code: newOrderCode } : {})
     }).select().single();
     order = data;
   }
