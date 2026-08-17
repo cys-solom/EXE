@@ -1946,6 +1946,60 @@ bot.onText(/\/start/, async msg => {
   return showHome(chatId, null);
 });
 
+// ============================================================
+//  Atajos de comandos (/shop, /balance, /deposit, /orders, /language,
+//  /support, /help) — mismo gate de canal/idioma que /start antes de
+//  saltar directo a la pantalla pedida.
+// ============================================================
+async function ensureReadyForShortcut(chatId, msg) {
+  await syncUsername(chatId, msg.from);
+  const { data: user } = await supabase.from("users").select("*").eq("id", chatId).maybeSingle();
+  const gateLang = (user && user.language) ? user.language : ((msg.from.language_code || "en").startsWith("ar") ? "ar" : "en");
+  if (!(await isUserInChannel(chatId))) { await showJoinChannelGate(chatId, gateLang, null); return false; }
+  if (!user || !user.language) { await showLangSelection(chatId, null); return false; }
+  return true;
+}
+
+bot.onText(/^\/shop$/, async msg => {
+  const chatId = msg.chat.id;
+  if (await ensureReadyForShortcut(chatId, msg)) return showShop(chatId, null);
+});
+bot.onText(/^\/balance$/, async msg => {
+  const chatId = msg.chat.id;
+  if (await ensureReadyForShortcut(chatId, msg)) return showBalance(chatId, null);
+});
+bot.onText(/^\/deposit$/, async msg => {
+  const chatId = msg.chat.id;
+  if (await ensureReadyForShortcut(chatId, msg)) return showDeposit(chatId, null);
+});
+bot.onText(/^\/orders$/, async msg => {
+  const chatId = msg.chat.id;
+  if (await ensureReadyForShortcut(chatId, msg)) return showOrders(chatId, null);
+});
+bot.onText(/^\/language$/, async msg => {
+  const chatId = msg.chat.id;
+  if (await ensureReadyForShortcut(chatId, msg)) return showLanguage(chatId, null);
+});
+bot.onText(/^\/support$/, async msg => {
+  const chatId = msg.chat.id;
+  if (!(await ensureReadyForShortcut(chatId, msg))) return;
+  const lang = await getUserLanguage(chatId); const t = L(lang);
+  const url = String(process.env.SUPPORT_URL || "").trim();
+  if (!url) return bot.sendMessage(chatId, lang === "ar" ? "الدعم غير مفعّل حاليًا." : "Support is not configured yet.");
+  return bot.sendMessage(chatId, `${tg("🆘", ICON("BELL"))} <b>${t.support}</b>`, {
+    parse_mode: "HTML", reply_markup: { inline_keyboard: [[styledUrlButton(t.support, url, "danger", ICON("BELL"))]] }
+  });
+});
+bot.onText(/^\/help$/, async msg => {
+  const chatId = msg.chat.id;
+  if (!(await ensureReadyForShortcut(chatId, msg))) return;
+  const lang = await getUserLanguage(chatId);
+  const helpText = lang === "ar"
+    ? `<b>📋 الأوامر المتاحة</b>\n\n/start — القائمة الرئيسية\n/shop — المتجر\n/balance — رصيدي\n/deposit — شحن المحفظة\n/orders — مشترياتي\n/language — تغيير اللغة\n/support — الدعم\n/help — هذه القائمة`
+    : `<b>📋 Available commands</b>\n\n/start — Main menu\n/shop — Shop\n/balance — My balance\n/deposit — Top-up wallet\n/orders — My orders\n/language — Change language\n/support — Support\n/help — This list`;
+  return bot.sendMessage(chatId, helpText, { parse_mode: "HTML" });
+});
+
 bot.on("callback_query", async query => {
   try {
     const chatId = query.message?.chat?.id;
@@ -2123,6 +2177,19 @@ async function deliverDirectBep20Purchase(chatId, txid, orderIdFromPoller) {
 // ============================================================
 //  Arranque
 // ============================================================
+// Menu de "/" en Telegram: aparecen como sugerencias al escribir "/".
+// Telegram solo permite un idioma de descripciones por comando, se usan en ingles+arabe combinados.
+bot.setMyCommands([
+  { command: "start", description: "القائمة الرئيسية / Main menu" },
+  { command: "shop", description: "المتجر / Shop" },
+  { command: "balance", description: "رصيدي / My balance" },
+  { command: "deposit", description: "شحن المحفظة / Top-up wallet" },
+  { command: "orders", description: "مشترياتي / My orders" },
+  { command: "language", description: "تغيير اللغة / Change language" },
+  { command: "support", description: "الدعم / Support" },
+  { command: "help", description: "قائمة الأوامر / List of commands" }
+]).catch(e => console.error("[COMMANDS] no se pudieron registrar:", e.message));
+
 startProductSync(supabase);
 
 payments.startBep20Poller(supabase, {
