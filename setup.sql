@@ -204,6 +204,23 @@ CREATE TABLE IF NOT EXISTS admin_activity_log (
 CREATE INDEX IF NOT EXISTS admin_activity_log_created_idx ON admin_activity_log (created_at DESC);
 
 -- ------------------------------------------------------------
+-- 11) TICKETS DE SOPORTE (problemas con ordenes reportados por el cliente)
+--     El cliente los crea desde "Mis Compras" -> pedido -> "Reportar un problema".
+--     Se administran desde el panel admin (pestaña "الشكاوى").
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id            BIGSERIAL PRIMARY KEY,
+  order_id      BIGINT REFERENCES orders(id) ON DELETE SET NULL,
+  telegram_id   BIGINT NOT NULL,
+  description   TEXT NOT NULL,                    -- lo que escribio el cliente
+  status        TEXT DEFAULT 'open',              -- open | closed
+  admin_reply   TEXT,                             -- respuesta del admin (se envia al cliente al cerrar)
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  resolved_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS support_tickets_status_idx ON support_tickets (status, created_at DESC);
+
+-- ------------------------------------------------------------
 -- Indices utiles
 -- ------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS bep20_pending_status_idx  ON bep20_pending (status, expires_at);

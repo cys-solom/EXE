@@ -107,7 +107,8 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
 // ---------- Tabs ----------
 const TAB_TITLES = {
   dashboard: "لوحة التحكم", activity: "سجل النشاط", broadcast: "بث رسالة", products: "منتجات KOKORO",
-  manual: "منتجاتي اليدوية", users: "المستخدمين", orders: "الطلبات", transactions: "المعاملات", activation: "التفعيل بالبريد"
+  manual: "منتجاتي اليدوية", users: "المستخدمين", orders: "الطلبات", transactions: "المعاملات",
+  activation: "التفعيل بالبريد", tickets: "الشكاوى"
 };
 let currentTab = "dashboard";
 
@@ -129,9 +130,80 @@ document.getElementById("refreshBtn").addEventListener("click", () => loadTab(cu
 function loadTab(tab) {
   const loaders = {
     dashboard: loadDashboard, activity: loadActivity, broadcast: () => {}, products: loadProducts, manual: loadManual,
-    users: loadUsers, orders: loadOrders, transactions: loadTransactions, activation: loadActivation
+    users: loadUsers, orders: loadOrders, transactions: loadTransactions, activation: loadActivation, tickets: loadTickets
   };
   (loaders[tab] || (() => {}))();
+}
+function ic(name, cls = "icon") { return `<svg class="${cls}"><use href="#ic-${name}"/></svg>`; }
+
+// ---------- Support tickets ----------
+async function loadTickets() {
+  const tbody = document.querySelector("#ticketsTable tbody");
+  tbody.innerHTML = skeletonRows(7);
+  const status = document.getElementById("ticketsStatusFilter").value;
+  try {
+    const { tickets } = await api(`tickets${status ? `?status=${status}` : ""}`);
+    if (!tickets.length) { tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">لا توجد تذاكر.</div></td></tr>`; return; }
+    tbody.innerHTML = tickets.map(t => `<tr class="clickable" data-id="${t.id}">
+      <td>#${t.id}</td>
+      <td>${t.telegram_id}</td>
+      <td>${t.order_id ? "#" + t.order_id : "-"}</td>
+      <td style="white-space:normal;max-width:280px">${esc((t.description || "").slice(0, 80))}${(t.description || "").length > 80 ? "…" : ""}</td>
+      <td><span class="badge ${t.status === "open" ? "badge-yellow" : "badge-green"}">${t.status === "open" ? "مفتوحة" : "مغلقة"}</span></td>
+      <td>${fmtDate(t.created_at)}</td>
+      <td><button class="btn btn-sm btn-primary" data-action="view">${ic("edit", "icon icon-sm")} عرض</button></td>
+    </tr>`).join("");
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="7">${esc(e.message)}</td></tr>`; }
+}
+document.getElementById("ticketsStatusFilter").addEventListener("change", loadTickets);
+document.querySelector("#ticketsTable tbody").addEventListener("click", e => {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  openTicketDetail(tr.dataset.id);
+});
+
+async function openTicketDetail(id) {
+  openModal(`تذكرة #${id}`, `<div class="empty-state">جارِ التحميل...</div>`);
+  try {
+    const { tickets } = await api(`tickets`);
+    const t = tickets.find(x => String(x.id) === String(id));
+    if (!t) { modalBody.innerHTML = `<div class="empty-state">التذكرة غير موجودة.</div>`; return; }
+    modalBody.innerHTML = `
+      <div class="detail-grid">
+        <div class="detail-item"><div class="di-label">العميل</div><div class="di-value">${t.telegram_id}</div></div>
+        <div class="detail-item"><div class="di-label">الطلب المرتبط</div><div class="di-value">${t.order_id ? "#" + t.order_id : "-"}</div></div>
+        <div class="detail-item"><div class="di-label">الحالة</div><div class="di-value"><span class="badge ${t.status === "open" ? "badge-yellow" : "badge-green"}">${t.status === "open" ? "مفتوحة" : "مغلقة"}</span></div></div>
+        <div class="detail-item"><div class="di-label">التاريخ</div><div class="di-value" style="font-size:12px">${fmtDate(t.created_at)}</div></div>
+      </div>
+      <div><b style="font-size:13px">وصف المشكلة</b></div>
+      <div class="detail-block">${esc(t.description)}</div>
+      ${t.admin_reply ? `<div><b style="font-size:13px">آخر رد</b></div><div class="detail-block">${esc(t.admin_reply)}</div>` : ""}
+      ${t.status === "open" ? `
+      <label>الرد على العميل (اختياري، بيتبعتله على تليجرام)</label>
+      <textarea id="tk_reply" placeholder="اكتب ردك هنا..."></textarea>
+      <div class="modal-actions">
+        <button class="btn" id="tk_close_only">إغلاق بدون رد</button>
+        <button class="btn btn-primary" id="tk_reply_close">إرسال الرد وإغلاق</button>
+      </div>` : `<div class="modal-actions"><button class="btn" id="tk_ok">تمام</button></div>`}
+    `;
+    const okBtn = document.getElementById("tk_ok");
+    if (okBtn) okBtn.addEventListener("click", closeModal);
+    const closeOnlyBtn = document.getElementById("tk_close_only");
+    if (closeOnlyBtn) closeOnlyBtn.addEventListener("click", async () => {
+      try { await api("tickets", { method: "PATCH", body: { id, close: true } }); toast("تم إغلاق التذكرة ✅"); closeModal(); loadTickets(); }
+      catch (err) { toast(err.message, "error"); }
+    });
+    const replyCloseBtn = document.getElementById("tk_reply_close");
+    if (replyCloseBtn) replyCloseBtn.addEventListener("click", async () => {
+      const reply = document.getElementById("tk_reply").value.trim();
+      try {
+        const r = await api("tickets", { method: "PATCH", body: { id, reply, close: true } });
+        toast(reply && r.notified === false ? "تم الإغلاق لكن تعذر إشعار العميل ⚠️" : "تم الرد والإغلاق ✅");
+        closeModal();
+        loadTickets();
+      } catch (err) { toast(err.message, "error"); }
+    });
+  } catch (e) { modalBody.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
 }
 
 // ---------- Dashboard ----------
@@ -141,12 +213,12 @@ async function loadDashboard() {
   try {
     const d = await api("dashboard");
     grid.innerHTML = `
-      <div class="stat-card ${d.kokoroLow ? "danger" : "success"}"><div class="stat-top"><div class="label">رصيد KOKORO المسبق</div><div class="stat-icon">🏦</div></div><div class="value">${d.kokoroBalance != null ? money(d.kokoroBalance) + " USDT" : "—"}</div>${d.kokoroError ? `<div class="muted" style="font-size:12px">${esc(d.kokoroError)}</div>` : (d.kokoroLow ? `<div style="font-size:12px;color:var(--danger)">⚠️ الرصيد منخفض، اشحن قريبًا</div>` : "")}</div>
-      <div class="stat-card"><div class="stat-top"><div class="label">عدد العملاء</div><div class="stat-icon">👥</div></div><div class="value">${d.usersCount}</div></div>
-      <div class="stat-card"><div class="stat-top"><div class="label">إجمالي الطلبات</div><div class="stat-icon">🧾</div></div><div class="value">${d.ordersCount}</div></div>
-      <div class="stat-card success"><div class="stat-top"><div class="label">الإيرادات (٩٠ يوم)</div><div class="stat-icon">💰</div></div><div class="value">${money(d.revenue)} USDT</div></div>
-      <div class="stat-card"><div class="stat-top"><div class="label">المنتجات المفعّلة</div><div class="stat-icon">📦</div></div><div class="value">${d.activeProducts}</div></div>
-      <div class="stat-card ${d.pendingDeliveries > 0 ? "warn" : ""}"><div class="stat-top"><div class="label">بانتظار تسليم يدوي</div><div class="stat-icon">⏳</div></div><div class="value">${d.pendingDeliveries}</div></div>
+      <div class="stat-card ${d.kokoroLow ? "danger" : "success"}"><div class="stat-top"><div class="label">رصيد KOKORO المسبق</div><div class="stat-icon">${ic("bank")}</div></div><div class="value">${d.kokoroBalance != null ? money(d.kokoroBalance) + " USDT" : "—"}</div>${d.kokoroError ? `<div class="muted" style="font-size:12px">${esc(d.kokoroError)}</div>` : (d.kokoroLow ? `<div style="font-size:12px;color:var(--danger);display:flex;align-items:center;gap:4px">${ic("warning", "icon icon-sm")} الرصيد منخفض، اشحن قريبًا</div>` : "")}</div>
+      <div class="stat-card"><div class="stat-top"><div class="label">عدد العملاء</div><div class="stat-icon">${ic("users")}</div></div><div class="value">${d.usersCount}</div></div>
+      <div class="stat-card"><div class="stat-top"><div class="label">إجمالي الطلبات</div><div class="stat-icon">${ic("receipt")}</div></div><div class="value">${d.ordersCount}</div></div>
+      <div class="stat-card success"><div class="stat-top"><div class="label">الإيرادات (٩٠ يوم)</div><div class="stat-icon">${ic("wallet")}</div></div><div class="value">${money(d.revenue)} USDT</div></div>
+      <div class="stat-card"><div class="stat-top"><div class="label">المنتجات المفعّلة</div><div class="stat-icon">${ic("box")}</div></div><div class="value">${d.activeProducts}</div></div>
+      <div class="stat-card ${d.pendingDeliveries > 0 ? "warn" : ""}"><div class="stat-top"><div class="label">بانتظار تسليم يدوي</div><div class="stat-icon">${ic("clock")}</div></div><div class="value">${d.pendingDeliveries}</div></div>
     `;
     renderRevenueChart(d.chart || []);
     renderStatusBreakdown(d.statusCounts || {});

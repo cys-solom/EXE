@@ -655,7 +655,9 @@ function L(lang) {
     binanceInstructions: "أرسل المبلغ إلى Pay ID ثم الصق رقم طلب Binance الخاص بك.",
     bep20Instructions: "أرسل هذا المبلغ بالضبط بعملة USDT (شبكة BSC/BEP20) إلى المحفظة:",
     exactAmount: "المبلغ المطلوب إرساله بالضبط", autoCredit: "سيتم الاعتماد تلقائياً عند اكتشاف الدفعة.",
-    orSendTxid: "أو أرسل رقم TXID أدناه إذا كنت قد دفعت بالفعل.", langChoose: "اختر لغتك:", langSaved: "تم تحديث اللغة."
+    orSendTxid: "أو أرسل رقم TXID أدناه إذا كنت قد دفعت بالفعل.", langChoose: "اختر لغتك:", langSaved: "تم تحديث اللغة.",
+    reportIssue: "⚠️ الإبلاغ عن مشكلة", reportIssuePrompt: "اكتب وصف المشكلة اللي حصلت في الطلب ده، وهنراجعها في أقرب وقت:",
+    reportIssueReceived: "✅ تم استلام بلاغك، هنتواصل معاك قريبًا.", reportIssueTooShort: "اكتب وصف أوضح للمشكلة من فضلك."
   };
   const en = {
     welcome: `Welcome to ${SHOP_NAME}`, yourBalance: "Your balance",
@@ -711,7 +713,9 @@ function L(lang) {
     binanceInstructions: "Send the amount to the Pay ID then paste your Binance Order ID.",
     bep20Instructions: "Send EXACTLY this amount in USDT (BSC/BEP20 network) to the wallet:",
     exactAmount: "Exact amount to send", autoCredit: "It will be credited automatically once detected.",
-    orSendTxid: "Or send your TXID below if you already paid.", langChoose: "Choose your language:", langSaved: "Language updated."
+    orSendTxid: "Or send your TXID below if you already paid.", langChoose: "Choose your language:", langSaved: "Language updated.",
+    reportIssue: "⚠️ Report a Problem", reportIssuePrompt: "Describe the problem with this order and we'll review it shortly:",
+    reportIssueReceived: "✅ Your report was received, we'll get back to you soon.", reportIssueTooShort: "Please write a clearer description of the problem."
   };
   return lang === "en" ? en : ar;
 }
@@ -1806,13 +1810,52 @@ async function showOrderDetail(chatId, messageId, orderId) {
     + `${tg("✅", ICON("CHECK"))} <b>${t.statusLabel}:</b> ${status}\n\n`
     + `<b>${t.receivedLabel}:</b>`;
 
-  const back = [[styledButton(t.backToOrders, "orders", "primary", ICON("BACK"))]];
+  const back = [
+    [styledButton(t.reportIssue, `report_${order.id}`, "danger", ICON("ATENTION"))],
+    [styledButton(t.backToOrders, "orders", "primary", ICON("BACK"))]
+  ];
   const full = `${header}\n\n${received}`;
   if (full.length > 4000) {
     await editOrSend(chatId, messageId, header, back);
     return bot.sendMessage(chatId, received, { parse_mode: "HTML", disable_web_page_preview: true });
   }
   return editOrSend(chatId, messageId, full, back);
+}
+
+// ============================================================
+//  Reportar un problema con una orden (crea un ticket de soporte)
+// ============================================================
+async function startReportIssue(chatId, messageId, orderId) {
+  const lang = await getUserLanguage(chatId); const t = L(lang);
+  const { data: order } = await supabase.from("orders").select("*").eq("telegram_id", chatId).eq("id", orderId).maybeSingle();
+  if (!order) return editOrSend(chatId, messageId, `${tg("❌", ICON("CANCEL"))} ${t.orderNotFound}`, [[styledButton(t.backToOrders, "orders", "primary", ICON("BACK"))]]);
+  sess(chatId).awaiting = "report_issue";
+  sess(chatId).reportOrderId = orderId;
+  return editOrSend(chatId, messageId, `${tg("⚠️", ICON("ATENTION"))} <b>${t.reportIssue}</b>\n\n${t.reportIssuePrompt}`,
+    [[styledButton(t.back, `order_${orderId}`, "danger", ICON("BACK"))]]);
+}
+
+async function submitReportIssue(chatId, text) {
+  const lang = await getUserLanguage(chatId); const t = L(lang);
+  const desc = String(text || "").trim();
+  const orderId = sess(chatId).reportOrderId;
+  if (desc.length < 4) return bot.sendMessage(chatId, t.reportIssueTooShort);
+
+  sess(chatId).awaiting = null;
+  sess(chatId).reportOrderId = null;
+
+  const { data: ticket, error } = await supabase.from("support_tickets").insert({
+    order_id: orderId || null, telegram_id: chatId, description: desc
+  }).select().single();
+  if (error) { console.error("[TICKET] insert error:", error.message); return; }
+
+  await bot.sendMessage(chatId, t.reportIssueReceived);
+  await sendAdminLog(
+    `⚠️ <b>تذكرة دعم جديدة #${ticket.id}</b>\n\n` +
+    `👤 @${getUsername(chatId)}\n🆔 <code>${chatId}</code>\n` +
+    `${orderId ? `🧾 الطلب #${orderId}\n` : ""}` +
+    `📝 ${htmlEscape(desc)}`
+  );
 }
 async function showLanguage(chatId, messageId) {
   const lang = await getUserLanguage(chatId); const t = L(lang);
@@ -1959,6 +2002,7 @@ bot.on("callback_query", async query => {
     if (data === "deposit") return showDeposit(chatId, messageId);
     if (data === "orders") return showOrders(chatId, messageId);
     if (data.startsWith("order_")) return showOrderDetail(chatId, messageId, parseInt(data.split("_")[1]));
+    if (data.startsWith("report_")) return startReportIssue(chatId, messageId, parseInt(data.split("_")[1]));
     if (data === "language") return showLanguage(chatId, messageId);
     if (data === "dep_binance") return showBinanceDeposit(chatId, messageId);
     if (data === "dep_bep20") return showBep20AskAmount(chatId, messageId);
@@ -2014,6 +2058,7 @@ bot.on("message", async msg => {
     const awaiting = s.awaiting;
     if (!awaiting) return;
 
+    if (awaiting === "report_issue") return submitReportIssue(chatId, text);
     if (awaiting === "amount_bep20") return handleDepositAmount(chatId, "bep20", text);
     if (awaiting === "bep20_txid") return confirmTopupBep20(chatId, text);
     if (awaiting === "topup_binance_orderid") return confirmTopupBinance(chatId, text);
