@@ -1504,6 +1504,7 @@ async function buyWithBalance(chatId, messageId, index, qty) {
         await bot.sendMessage(chatId, formatDeliveredProducts(String(delivery.content)), { parse_mode: "HTML", disable_web_page_preview: true });
       });
     }
+    if (order?.id) await sendDeliveryFile(chatId, order.id, delivery.content);
     await sendAdminLog(`✅ COMPRA CONFIRMADA (Balance)\n\n👤 @${getUsername(chatId)}\n🆔 ${chatId}\n📦 ${p.name}\n🔢 ${qty}\n💰 ${money(total)} USDT\n🧾 #${order?.id || "-"}`);
     await sendReorderButton(chatId, t, { product_id: p.id, product_name: p.name, quantity: qty }, p.price);
     return;
