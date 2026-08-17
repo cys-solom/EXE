@@ -1306,10 +1306,10 @@ async function showPaymentMethods(chatId, messageId, index, qty) {
     + `<b>${t.choosePaymentMethod}</b>`;
 
   const kb = [
-    [styledButton(t.buyBinance, `paybinance_${index}_${qty}`, "success", ICON("BINANCE_PAY"))],
-    [styledButton(t.payBEP20, `paybep20_${index}_${qty}`, "success", ICON("BEP20"))],
-    [styledButton(t.payBalance, `paybalance_${index}_${qty}`, "primary", ICON("MONEY"))]
+    [styledButton(t.buyBinance, `paybinance_${index}_${qty}`, "success", ICON("BINANCE_PAY"))]
   ];
+  if (BEP20_WALLET) kb.push([styledButton(t.payBEP20, `paybep20_${index}_${qty}`, "success", ICON("BEP20"))]);
+  kb.push([styledButton(t.payBalance, `paybalance_${index}_${qty}`, "primary", ICON("MONEY"))]);
   kb.push([styledButton(t.back, `qty_${index}_${qty}`, "danger", ICON("BACK"))]);
   return editOrSend(chatId, messageId, text, kb);
 }
@@ -1639,10 +1639,10 @@ async function showDeposit(chatId, messageId) {
     + `└ $100 → +5% · ${t.getAmount} $105.00\n</blockquote>\n\n`
     + `<i>${t.pickPayment}</i>`;
   const kb = [
-    [styledButton(t.binancePayDeposit, "dep_binance", "success", ICON("BINANCE_PAY"))],
-    [styledButton(t.bep20Deposit, "dep_bep20", "success", ICON("BEP20"))],
-    [styledButton(t.backHome, "home", "danger", ICON("BACK"))]
+    [styledButton(t.binancePayDeposit, "dep_binance", "success", ICON("BINANCE_PAY"))]
   ];
+  if (BEP20_WALLET) kb.push([styledButton(t.bep20Deposit, "dep_bep20", "success", ICON("BEP20"))]);
+  kb.push([styledButton(t.backHome, "home", "danger", ICON("BACK"))]);
   return editOrSend(chatId, messageId, text, kb);
 }
 
