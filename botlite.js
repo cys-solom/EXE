@@ -1349,10 +1349,12 @@ function orderCode(id) {
 // es mas comodo de guardar/copiar que un mensaje largo.
 async function sendDeliveryFile(chatId, orderId, content) {
   try {
-    const buffer = Buffer.from(String(content), "utf-8");
+    const buffer = Buffer.from(String(content || "").trim(), "utf-8");
+    if (!buffer.length) return; // nada que adjuntar
     await bot.sendDocument(chatId, buffer, {}, { filename: `${orderCode(orderId)}.txt`, contentType: "text/plain" });
   } catch (e) {
     console.error("[DELIVERY FILE]", e.message);
+    sendAdminLog(`⚠️ <b>لم يتم إرسال ملف التسليم</b>\n\n🧾 الطلب <code>${orderCode(orderId)}</code>\n👤 ${chatId}\n❌ ${htmlEscape(e.message)}`).catch(() => {});
   }
 }
 

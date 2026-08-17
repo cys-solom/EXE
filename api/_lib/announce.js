@@ -12,7 +12,9 @@ async function announceStock(supabase, product) {
   const priceLineEn = product.price != null ? `\n💵 Price: from <b>${Number(product.price).toFixed(2)} USDT</b>` : "";
   // "style: success" = verde, mismo esquema de colores que usa el bot en sus botones (styledButton).
   // callback_data manda al cliente directo a ESTE producto (no al catalogo general).
-  const buyCbData = `buyprod_manual_${product.id}`;
+  // Si por algun motivo no tenemos el id (el caller olvido seleccionarlo), mejor
+  // mandar al catalogo general que a un boton roto que nunca encuentra nada.
+  const buyCbData = product.id != null ? `buyprod_manual_${product.id}` : "shop";
   const shopBtn = { inline_keyboard: [[{ text: "🛒 اشتري الآن", callback_data: buyCbData, style: "success" }]] };
   const shopBtnEn = { inline_keyboard: [[{ text: "🛒 Buy Now", callback_data: buyCbData, style: "success" }]] };
 
