@@ -2,6 +2,7 @@
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
 const { announceStock } = require("./_lib/announce.js");
+const { logActivity } = require("./_lib/activity.js");
 
 module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
@@ -49,6 +50,7 @@ module.exports = requireAuth(async (req, res) => {
       if (notify !== false) broadcast = await announceStock(supabase, data.name, data.emoji);
     }
 
+    logActivity(supabase, "manual_product_create", `منتج يدوي جديد: ${data.name}${added ? ` (+${added} مخزون)` : ""}`, { id: data.id });
     return res.status(200).json({ product: data, stockAdded: added, broadcast });
   }
 
@@ -64,14 +66,17 @@ module.exports = requireAuth(async (req, res) => {
     if (!Object.keys(patch).length) return res.status(400).json({ error: "nada que actualizar" });
     const { error } = await supabase.from("products_manual").update(patch).eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
+    logActivity(supabase, "manual_product_update", `تعديل منتج يدوي: ${patch.name || `#${id}`}`, { id, patch });
     return res.status(200).json({ ok: true });
   }
 
   if (req.method === "DELETE") {
     const id = req.query.id || (req.body || {}).id;
     if (!id) return res.status(400).json({ error: "id requerido" });
+    const { data: before } = await supabase.from("products_manual").select("name").eq("id", id).maybeSingle();
     const { error } = await supabase.from("products_manual").delete().eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
+    logActivity(supabase, "manual_product_delete", `حذف منتج يدوي: ${(before && before.name) || `#${id}`}`, { id });
     return res.status(200).json({ ok: true });
   }
 

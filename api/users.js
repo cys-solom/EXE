@@ -2,11 +2,25 @@
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
 const { sendTelegramMessage } = require("./_lib/telegram.js");
+const { logActivity } = require("./_lib/activity.js");
+const { toCsv, sendCsv } = require("./_lib/csv.js");
 
 module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
 
   if (req.method === "GET") {
+    // ?detail=<id> -> perfil completo con historial de ordenes y transacciones (para el modal de detalle)
+    if (req.query.detail) {
+      const id = req.query.detail;
+      const [{ data: user }, { data: orders }, { data: transactions }] = await Promise.all([
+        supabase.from("users").select("*").eq("id", id).maybeSingle(),
+        supabase.from("orders").select("*").eq("telegram_id", id).order("created_at", { ascending: false }).limit(50),
+        supabase.from("transactions").select("*").eq("telegram_id", id).order("created_at", { ascending: false }).limit(50)
+      ]);
+      if (!user) return res.status(404).json({ error: "usuario no encontrado" });
+      return res.status(200).json({ user, orders: orders || [], transactions: transactions || [] });
+    }
+
     const search = String(req.query.q || "").trim();
     let query = supabase.from("users").select("*").order("created_at", { ascending: false }).limit(200);
     if (search) {
@@ -15,6 +29,14 @@ module.exports = requireAuth(async (req, res) => {
     }
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
+    if (req.query.format === "csv") {
+      const csv = toCsv(data || [], [
+        { label: "ID", value: "id" }, { label: "Usuario", value: "username" },
+        { label: "Idioma", value: "language" }, { label: "Balance", value: "balance" },
+        { label: "Fecha de registro", value: "created_at" }
+      ]);
+      return sendCsv(res, "clientes.csv", csv);
+    }
     return res.status(200).json({ users: data });
   }
 
@@ -50,6 +72,7 @@ module.exports = requireAuth(async (req, res) => {
         ? `💰 <b>تم خصم ${Math.abs(d).toFixed(2)} USDT من رصيدك</b>\n\nرصيدك الحالي: <b>${newBalance.toFixed(2)} USDT</b>`
         : `💰 <b>${Math.abs(d).toFixed(2)} USDT has been deducted from your balance</b>\n\nYour current balance: <b>${newBalance.toFixed(2)} USDT</b>`);
     const tgRes = await sendTelegramMessage(id, text);
+    logActivity(supabase, "balance_adjust", `${d >= 0 ? "إضافة" : "خصم"} ${Math.abs(d).toFixed(2)} USDT ${d >= 0 ? "لـ" : "من"} العميل #${id}`, { id, delta: d, reason: reason || null });
 
     return res.status(200).json({ ok: true, balance: newBalance, notified: tgRes.ok, notifyError: tgRes.error || null });
   }

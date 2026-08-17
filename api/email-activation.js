@@ -1,6 +1,7 @@
 // Lista de productos que piden correo/usuario en vez de entregarse solos (reemplaza /correos_add, /correos_list, /correos_del).
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
+const { logActivity } = require("./_lib/activity.js");
 
 module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
@@ -16,14 +17,17 @@ module.exports = requireAuth(async (req, res) => {
     if (!name) return res.status(400).json({ error: "name_contains requerido" });
     const { error } = await supabase.from("email_activation_products").insert({ name_contains: name });
     if (error) return res.status(500).json({ error: error.message });
+    logActivity(supabase, "email_activation_add", `إضافة "${name}" لقائمة التفعيل اليدوي`, {});
     return res.status(200).json({ ok: true });
   }
 
   if (req.method === "DELETE") {
     const id = req.query.id || (req.body || {}).id;
     if (!id) return res.status(400).json({ error: "id requerido" });
+    const { data: before } = await supabase.from("email_activation_products").select("name_contains").eq("id", id).maybeSingle();
     const { error } = await supabase.from("email_activation_products").delete().eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
+    logActivity(supabase, "email_activation_remove", `إزالة "${(before && before.name_contains) || id}" من قائمة التفعيل اليدوي`, {});
     return res.status(200).json({ ok: true });
   }
 

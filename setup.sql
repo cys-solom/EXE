@@ -190,11 +190,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS email_activation_products_name_uniq
   ON email_activation_products (lower(trim(name_contains)));
 
 -- ------------------------------------------------------------
+-- 10) SEGUIMIENTO DE ACTIVIDAD DEL PANEL ADMIN
+--     Registra cada accion importante hecha desde el panel web
+--     (para tener un historial/auditoria de lo que se hizo y cuando).
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS admin_activity_log (
+  id            BIGSERIAL PRIMARY KEY,
+  action        TEXT NOT NULL,                    -- ej: 'product_toggle', 'order_deliver', 'broadcast_sent'
+  summary       TEXT NOT NULL,                     -- texto legible de lo que paso
+  meta          JSONB,                             -- datos extra (id de la orden, monto, etc.)
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS admin_activity_log_created_idx ON admin_activity_log (created_at DESC);
+
+-- ------------------------------------------------------------
 -- Indices utiles
 -- ------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS bep20_pending_status_idx  ON bep20_pending (status, expires_at);
 CREATE INDEX IF NOT EXISTS orders_telegram_id_idx     ON orders (telegram_id);
 CREATE INDEX IF NOT EXISTS transactions_tid_idx       ON transactions (telegram_id);
+CREATE INDEX IF NOT EXISTS orders_created_at_idx       ON orders (created_at DESC);
+CREATE INDEX IF NOT EXISTS orders_status_idx           ON orders (status);
 CREATE INDEX IF NOT EXISTS stock_manual_product_idx   ON stock_manual (product_id, is_sold);
 CREATE INDEX IF NOT EXISTS products_enabled_idx       ON products (enabled);
 

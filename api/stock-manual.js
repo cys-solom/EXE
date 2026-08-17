@@ -2,6 +2,7 @@
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
 const { announceStock } = require("./_lib/announce.js");
+const { logActivity } = require("./_lib/activity.js");
 
 module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
@@ -22,11 +23,10 @@ module.exports = requireAuth(async (req, res) => {
     const { error } = await supabase.from("stock_manual").insert(rows);
     if (error) return res.status(500).json({ error: error.message });
 
+    const { data: product } = await supabase.from("products_manual").select("name, emoji").eq("id", product_id).maybeSingle();
     let broadcast = null;
-    if (notify !== false) {
-      const { data: product } = await supabase.from("products_manual").select("name, emoji").eq("id", product_id).maybeSingle();
-      if (product) broadcast = await announceStock(supabase, product.name, product.emoji);
-    }
+    if (notify !== false && product) broadcast = await announceStock(supabase, product.name, product.emoji);
+    logActivity(supabase, "stock_add", `إضافة ${rows.length} وحدة مخزون لـ ${(product && product.name) || `#${product_id}`}`, { product_id, added: rows.length });
 
     return res.status(200).json({ ok: true, added: rows.length, broadcast });
   }
@@ -36,6 +36,7 @@ module.exports = requireAuth(async (req, res) => {
     if (!id) return res.status(400).json({ error: "id requerido" });
     const { error } = await supabase.from("stock_manual").delete().eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
+    logActivity(supabase, "stock_delete", `حذف وحدة مخزون #${id}`, { id });
     return res.status(200).json({ ok: true });
   }
 

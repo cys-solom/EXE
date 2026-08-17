@@ -26,17 +26,26 @@
 <!-- التطبيق -->
 <div id="app" class="app hidden">
   <aside class="sidebar">
-    <div class="sidebar-brand">🛍️ <span>لوحة التحكم</span></div>
+    <div class="sidebar-brand"><span class="logo-dot">🛍️</span> <span>لوحة التحكم</span></div>
+    <div class="nav-group-label">الرئيسية</div>
     <nav class="nav">
-      <button class="nav-item active" data-tab="dashboard">📊 لوحة التحكم</button>
-      <button class="nav-item" data-tab="broadcast">📣 بث رسالة</button>
-      <button class="nav-item" data-tab="products">📦 منتجات KOKORO</button>
-      <button class="nav-item" data-tab="manual">🧩 منتجاتي اليدوية</button>
-      <button class="nav-item" data-tab="users">👥 المستخدمين</button>
-      <button class="nav-item" data-tab="orders">🧾 الطلبات</button>
-      <button class="nav-item" data-tab="transactions">💳 المعاملات</button>
-      <button class="nav-item" data-tab="activation">📧 التفعيل بالبريد</button>
+      <button class="nav-item active" data-tab="dashboard"><span class="nav-ic">📊</span> لوحة التحكم</button>
+      <button class="nav-item" data-tab="activity"><span class="nav-ic">🕓</span> سجل النشاط</button>
     </nav>
+    <div class="nav-group-label">المتجر</div>
+    <nav class="nav">
+      <button class="nav-item" data-tab="products"><span class="nav-ic">📦</span> منتجات KOKORO</button>
+      <button class="nav-item" data-tab="manual"><span class="nav-ic">🧩</span> منتجاتي اليدوية</button>
+      <button class="nav-item" data-tab="activation"><span class="nav-ic">📧</span> التفعيل بالبريد</button>
+    </nav>
+    <div class="nav-group-label">العملاء</div>
+    <nav class="nav">
+      <button class="nav-item" data-tab="users"><span class="nav-ic">👥</span> المستخدمين</button>
+      <button class="nav-item" data-tab="orders"><span class="nav-ic">🧾</span> الطلبات</button>
+      <button class="nav-item" data-tab="transactions"><span class="nav-ic">💳</span> المعاملات</button>
+      <button class="nav-item" data-tab="broadcast"><span class="nav-ic">📣</span> بث رسالة</button>
+    </nav>
+    <div class="sidebar-spacer"></div>
     <button id="logoutBtn" class="btn btn-ghost btn-block">🚪 تسجيل الخروج</button>
   </aside>
 
@@ -47,10 +56,33 @@
       <button id="refreshBtn" class="btn btn-ghost">🔄 تحديث</button>
     </header>
 
-    <div id="toast" class="toast hidden"></div>
+    <div id="toastStack" class="toast-stack"></div>
 
     <section id="tab-dashboard" class="tab active">
       <div id="dashboardStats" class="stats-grid"></div>
+      <div class="dash-grid">
+        <div class="card">
+          <h3>📈 الإيرادات — آخر 14 يوم</h3>
+          <div id="revenueChart" class="chart-wrap"></div>
+        </div>
+        <div class="card">
+          <h3>🧭 حالة الطلبات</h3>
+          <div id="statusBreakdown" class="status-breakdown"></div>
+        </div>
+        <div class="card">
+          <h3>🏆 الأكثر مبيعًا</h3>
+          <div id="topProducts" class="mini-list"></div>
+        </div>
+        <div class="card">
+          <h3>💎 أعلى العملاء إنفاقًا</h3>
+          <div id="topCustomers" class="mini-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-activity" class="tab">
+      <p class="section-hint">سجل بكل الإجراءات المهمة اللي اتعملت من لوحة الأدمن.</p>
+      <div class="card"><div id="activityFeed" class="activity-feed"></div></div>
     </section>
 
     <section id="tab-broadcast" class="tab">
@@ -78,9 +110,18 @@
     <section id="tab-products" class="tab">
       <div class="toolbar">
         <input type="text" id="productsSearch" placeholder="ابحث باسم المنتج...">
+        <div class="toolbar-spacer"></div>
+        <a id="productsExport" class="btn btn-sm" href="/api/products?format=csv" target="_blank">⬇ تصدير CSV</a>
+      </div>
+      <div id="productsBulkBar" class="bulk-bar hidden">
+        <span><span id="productsBulkCount" class="count">0</span> منتج محدد</span>
+        <div class="bulk-bar-spacer"></div>
+        <button class="btn btn-sm btn-success" data-bulk="enable">تفعيل الكل</button>
+        <button class="btn btn-sm btn-danger" data-bulk="disable">إخفاء الكل</button>
       </div>
       <div class="table-wrap"><table id="productsTable"><thead><tr>
-        <th>اسم API (الأصلي)</th><th>الاسم المعروض للعميل</th><th>السعر (مايسترو)</th><th>السعر للعميل</th><th>المخزون</th><th>الهامش %</th><th>مفعّل</th><th>إيموجي</th><th></th>
+        <th style="width:26px"><input type="checkbox" id="productsSelectAll"></th>
+        <th>اسم API (الأصلي)</th><th>الاسم المعروض للعميل</th><th>السعر (مايسترو)</th><th>السعر للعميل</th><th>المخزون</th><th>الهامش</th><th>مفعّل</th><th>إيموجي</th><th></th>
       </tr></thead><tbody></tbody></table></div>
     </section>
 
@@ -88,14 +129,14 @@
       <div class="toolbar">
         <button id="addManualBtn" class="btn btn-primary">+ منتج جديد</button>
       </div>
-      <div class="table-wrap"><table id="manualTable"><thead><tr>
-        <th>المنتج</th><th>السعر</th><th>الحد الأدنى</th><th>المخزون المتاح</th><th>مفعّل</th><th></th>
-      </tr></thead><tbody></tbody></table></div>
+      <div id="manualGrid" class="card-grid"></div>
     </section>
 
     <section id="tab-users" class="tab">
       <div class="toolbar">
         <input type="text" id="usersSearch" placeholder="ابحث بالـ ID أو اليوزر...">
+        <div class="toolbar-spacer"></div>
+        <a class="btn btn-sm" href="/api/users?format=csv" target="_blank">⬇ تصدير CSV</a>
       </div>
       <div class="table-wrap"><table id="usersTable"><thead><tr>
         <th>ID</th><th>اليوزر</th><th>اللغة</th><th>الرصيد</th><th>تاريخ التسجيل</th><th></th>
@@ -112,6 +153,8 @@
           <option value="delivered">تم التسليم</option>
           <option value="cancelled">ملغي</option>
         </select>
+        <div class="toolbar-spacer"></div>
+        <a id="ordersExport" class="btn btn-sm" href="/api/orders?format=csv" target="_blank">⬇ تصدير CSV</a>
       </div>
       <div class="table-wrap"><table id="ordersTable"><thead><tr>
         <th>#</th><th>العميل</th><th>المنتج</th><th>الكمية</th><th>الإجمالي</th><th>طريقة الدفع</th><th>الحالة</th><th>التاريخ</th><th></th>
@@ -119,13 +162,17 @@
     </section>
 
     <section id="tab-transactions" class="tab">
+      <div class="toolbar">
+        <div class="toolbar-spacer"></div>
+        <a class="btn btn-sm" href="/api/transactions?format=csv" target="_blank">⬇ تصدير CSV</a>
+      </div>
       <div class="table-wrap"><table id="transactionsTable"><thead><tr>
         <th>العميل</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th>
       </tr></thead><tbody></tbody></table></div>
     </section>
 
     <section id="tab-activation" class="tab">
-      <p class="muted">المنتجات هنا لا تُسلَّم تلقائياً — البوت يطلب من العميل بريده/يوزره وتفعّله يدوياً.</p>
+      <p class="section-hint">المنتجات هنا لا تُسلَّم تلقائياً — البوت يطلب من العميل بريده/يوزره وتفعّله يدوياً.</p>
       <div class="toolbar">
         <input type="text" id="activationInput" placeholder="اسم المنتج بالضبط (مطابقة كاملة)...">
         <button id="addActivationBtn" class="btn btn-primary">+ إضافة</button>
@@ -139,7 +186,7 @@
 
 <!-- مودال عام -->
 <div id="modalOverlay" class="modal-overlay hidden">
-  <div class="modal">
+  <div id="modalBox" class="modal">
     <div class="modal-header">
       <h3 id="modalTitle"></h3>
       <button id="modalClose" class="modal-close">✕</button>

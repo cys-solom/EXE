@@ -2,11 +2,19 @@
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
 const { sendTelegramMessage, notifyAdmin } = require("./_lib/telegram.js");
+const { logActivity } = require("./_lib/activity.js");
+const { toCsv, sendCsv } = require("./_lib/csv.js");
 
 module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
 
   if (req.method === "GET") {
+    if (req.query.detail) {
+      const { data: order, error } = await supabase.from("orders").select("*").eq("id", req.query.detail).maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!order) return res.status(404).json({ error: "orden no encontrada" });
+      return res.status(200).json({ order });
+    }
     const status = String(req.query.status || "").trim();
     const search = String(req.query.q || "").trim();
     let query = supabase.from("orders").select("*").order("created_at", { ascending: false }).limit(200);
@@ -19,6 +27,15 @@ module.exports = requireAuth(async (req, res) => {
     }
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
+    if (req.query.format === "csv") {
+      const csv = toCsv(data || [], [
+        { label: "ID", value: "id" }, { label: "Cliente", value: "telegram_id" },
+        { label: "Producto", value: "product_name" }, { label: "Cantidad", value: "quantity" },
+        { label: "Total", value: "total" }, { label: "Metodo de pago", value: "payment_method" },
+        { label: "Estado", value: "status" }, { label: "Fecha", value: "created_at" }
+      ]);
+      return sendCsv(res, "ordenes.csv", csv);
+    }
     return res.status(200).json({ orders: data });
   }
 
@@ -49,6 +66,7 @@ module.exports = requireAuth(async (req, res) => {
         : `✅ <b>Your order has been delivered!</b>\n\n📦 ${order.product_name}\n🧾 Order #${order.id}\n💰 ${Number(order.total || 0).toFixed(2)} USDT\n\n${body}`;
       const tgRes = await sendTelegramMessage(order.telegram_id, text);
       notifyAdmin(`✅ <b>ENTREGA MANUAL (panel admin)</b>\n\n📦 ${order.product_name} x${order.quantity}\n🧾 #${order.id}\n👤 ${order.telegram_id}`).catch(() => {});
+      logActivity(supabase, "order_deliver", `تسليم الطلب #${order.id} (${order.product_name}) للعميل #${order.telegram_id}`, { id: order.id });
       return res.status(200).json({ ok: true, notified: tgRes.ok, notifyError: tgRes.error || null });
     }
 
@@ -63,6 +81,7 @@ module.exports = requireAuth(async (req, res) => {
         : `❌ <b>Your order has been cancelled</b>\n\n📦 ${order.product_name}\n🧾 Order #${order.id}\n\nContact support if you have any questions.`;
       const tgRes = await sendTelegramMessage(order.telegram_id, text);
       notifyAdmin(`❌ <b>ORDEN CANCELADA (panel admin)</b>\n\n📦 ${order.product_name} x${order.quantity}\n🧾 #${order.id}\n👤 ${order.telegram_id}`).catch(() => {});
+      logActivity(supabase, "order_cancel", `إلغاء الطلب #${order.id} (${order.product_name})`, { id: order.id });
       return res.status(200).json({ ok: true, notified: tgRes.ok, notifyError: tgRes.error || null });
     }
 

@@ -3,8 +3,16 @@
 // ============================================================
 const STATUS_LABELS = { processing: "قيد المعالجة", paid: "مدفوع", delivered: "تم التسليم", cancelled: "ملغي" };
 const STATUS_BADGE = { processing: "badge-blue", paid: "badge-yellow", delivered: "badge-green", cancelled: "badge-red" };
+const STATUS_COLOR = { processing: "var(--primary)", paid: "var(--warning)", delivered: "var(--success)", cancelled: "var(--danger)" };
+const ACTIVITY_ICONS = {
+  product_toggle: "🔁", product_update: "✏️", manual_product_create: "🆕", manual_product_update: "✏️",
+  manual_product_delete: "🗑️", stock_add: "📦", stock_delete: "🗑️", balance_adjust: "💰",
+  order_deliver: "✅", order_cancel: "❌", email_activation_add: "📧", email_activation_remove: "📧",
+  broadcast_single: "📣", broadcast_all: "📣"
+};
 
-let currentProducts = []; // كاش لآخر منتجات KOKORO محمّلة (لحساب سعر العميل)
+let currentProducts = []; // كاش لآخر منتجات KOKORO محمّلة
+let selectedProductIds = new Set();
 
 // ---------- Helpers ----------
 async function api(path, opts = {}) {
@@ -20,11 +28,13 @@ async function api(path, opts = {}) {
 }
 
 function toast(msg, type = "success") {
-  const el = document.getElementById("toast");
-  el.textContent = msg;
+  const stack = document.getElementById("toastStack");
+  const el = document.createElement("div");
   el.className = `toast ${type}`;
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.add("hidden"), 3200);
+  el.textContent = (type === "error" ? "⚠️ " : "✅ ") + msg;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 3400);
+  while (stack.children.length > 4) stack.removeChild(stack.firstChild);
 }
 
 function esc(s) {
@@ -32,14 +42,28 @@ function esc(s) {
 }
 function money(n) { return Number(n || 0).toFixed(2); }
 function fmtDate(d) { if (!d) return "-"; const dt = new Date(d); return dt.toLocaleDateString("ar-EG") + " " + dt.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }); }
+function timeAgo(d) {
+  const secs = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
+  if (secs < 60) return "الآن";
+  if (secs < 3600) return `منذ ${Math.floor(secs / 60)} دقيقة`;
+  if (secs < 86400) return `منذ ${Math.floor(secs / 3600)} ساعة`;
+  return `منذ ${Math.floor(secs / 86400)} يوم`;
+}
+function skeletonRows(cols, n = 4) {
+  return Array.from({ length: n }).map(() =>
+    `<tr class="skel-row">${Array.from({ length: cols }).map(() => `<td><span class="skel"></span></td>`).join("")}</tr>`
+  ).join("");
+}
 
 // ---------- Modal ----------
 const modalOverlay = document.getElementById("modalOverlay");
+const modalBox = document.getElementById("modalBox");
 const modalTitle = document.getElementById("modalTitle");
 const modalBody = document.getElementById("modalBody");
-function openModal(title, bodyHtml) {
+function openModal(title, bodyHtml, opts = {}) {
   modalTitle.textContent = title;
   modalBody.innerHTML = bodyHtml;
+  modalBox.classList.toggle("modal-lg", !!opts.large);
   modalOverlay.classList.remove("hidden");
 }
 function closeModal() { modalOverlay.classList.add("hidden"); modalBody.innerHTML = ""; }
@@ -82,8 +106,8 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
 
 // ---------- Tabs ----------
 const TAB_TITLES = {
-  dashboard: "لوحة التحكم", broadcast: "بث رسالة", products: "منتجات KOKORO", manual: "منتجاتي اليدوية",
-  users: "المستخدمين", orders: "الطلبات", transactions: "المعاملات", activation: "التفعيل بالبريد"
+  dashboard: "لوحة التحكم", activity: "سجل النشاط", broadcast: "بث رسالة", products: "منتجات KOKORO",
+  manual: "منتجاتي اليدوية", users: "المستخدمين", orders: "الطلبات", transactions: "المعاملات", activation: "التفعيل بالبريد"
 };
 let currentTab = "dashboard";
 
@@ -104,10 +128,90 @@ document.getElementById("refreshBtn").addEventListener("click", () => loadTab(cu
 
 function loadTab(tab) {
   const loaders = {
-    dashboard: loadDashboard, products: loadProducts, manual: loadManual,
+    dashboard: loadDashboard, activity: loadActivity, broadcast: () => {}, products: loadProducts, manual: loadManual,
     users: loadUsers, orders: loadOrders, transactions: loadTransactions, activation: loadActivation
   };
   (loaders[tab] || (() => {}))();
+}
+
+// ---------- Dashboard ----------
+async function loadDashboard() {
+  const grid = document.getElementById("dashboardStats");
+  grid.innerHTML = Array.from({ length: 6 }).map(() => `<div class="stat-card"><span class="skel" style="width:60%"></span><span class="skel" style="height:22px;margin-top:6px"></span></div>`).join("");
+  try {
+    const d = await api("dashboard");
+    grid.innerHTML = `
+      <div class="stat-card ${d.kokoroLow ? "danger" : "success"}"><div class="stat-top"><div class="label">رصيد KOKORO المسبق</div><div class="stat-icon">🏦</div></div><div class="value">${d.kokoroBalance != null ? money(d.kokoroBalance) + " USDT" : "—"}</div>${d.kokoroError ? `<div class="muted" style="font-size:12px">${esc(d.kokoroError)}</div>` : (d.kokoroLow ? `<div style="font-size:12px;color:var(--danger)">⚠️ الرصيد منخفض، اشحن قريبًا</div>` : "")}</div>
+      <div class="stat-card"><div class="stat-top"><div class="label">عدد العملاء</div><div class="stat-icon">👥</div></div><div class="value">${d.usersCount}</div></div>
+      <div class="stat-card"><div class="stat-top"><div class="label">إجمالي الطلبات</div><div class="stat-icon">🧾</div></div><div class="value">${d.ordersCount}</div></div>
+      <div class="stat-card success"><div class="stat-top"><div class="label">الإيرادات (٩٠ يوم)</div><div class="stat-icon">💰</div></div><div class="value">${money(d.revenue)} USDT</div></div>
+      <div class="stat-card"><div class="stat-top"><div class="label">المنتجات المفعّلة</div><div class="stat-icon">📦</div></div><div class="value">${d.activeProducts}</div></div>
+      <div class="stat-card ${d.pendingDeliveries > 0 ? "warn" : ""}"><div class="stat-top"><div class="label">بانتظار تسليم يدوي</div><div class="stat-icon">⏳</div></div><div class="value">${d.pendingDeliveries}</div></div>
+    `;
+    renderRevenueChart(d.chart || []);
+    renderStatusBreakdown(d.statusCounts || {});
+    renderMiniList("topProducts", (d.topProducts || []).map(p => ({ label: p.name, value: `${money(p.total)}$` })), "لا توجد مبيعات بعد.");
+    renderMiniList("topCustomers", (d.topCustomers || []).map(c => ({ label: c.username ? "@" + c.username : `#${c.id}`, value: `${money(c.total)}$` })), "لا توجد مبيعات بعد.");
+  } catch (e) { grid.innerHTML = `<div class="stat-card"><div class="label">خطأ</div><div class="value" style="font-size:14px">${esc(e.message)}</div></div>`; }
+}
+
+function renderMiniList(elId, rows, emptyMsg) {
+  const el = document.getElementById(elId);
+  if (!rows.length) { el.innerHTML = `<div class="empty-state">${emptyMsg}</div>`; return; }
+  el.innerHTML = rows.map((r, i) => `<div class="mini-list-row"><span class="rank">${i + 1}</span><span class="mn">${esc(r.label)}</span><span class="mv">${esc(r.value)}</span></div>`).join("");
+}
+
+function renderStatusBreakdown(counts) {
+  const el = document.getElementById("statusBreakdown");
+  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+  const order = ["processing", "paid", "delivered", "cancelled"];
+  el.innerHTML = order.map(s => {
+    const c = counts[s] || 0;
+    const pct = Math.round((c / total) * 100);
+    return `<div class="status-row">
+      <span style="width:90px">${STATUS_LABELS[s]}</span>
+      <div class="bar-bg"><div class="bar-fg" style="width:${pct}%;background:${STATUS_COLOR[s]}"></div></div>
+      <span style="width:34px;text-align:left">${c}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderRevenueChart(points) {
+  const el = document.getElementById("revenueChart");
+  if (!points.length) { el.innerHTML = `<div class="empty-state">لا توجد بيانات مبيعات بعد.</div>`; return; }
+  const w = Math.max(points.length * 34, 320), h = 160, padBottom = 20, padTop = 10;
+  const max = Math.max(...points.map(p => p.revenue), 1);
+  const barW = (w / points.length) * 0.6;
+  const gap = (w / points.length) * 0.4;
+  let bars = "", labels = "";
+  points.forEach((p, i) => {
+    const barH = Math.max((p.revenue / max) * (h - padBottom - padTop), p.revenue > 0 ? 3 : 0);
+    const x = i * (barW + gap) + gap / 2;
+    const y = h - padBottom - barH;
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3"><title>${p.date}: $${money(p.revenue)}</title></rect>`;
+    if (i % Math.ceil(points.length / 7 || 1) === 0) {
+      const day = p.date.slice(5);
+      labels += `<text x="${(x + barW / 2).toFixed(1)}" y="${h - 4}" text-anchor="middle">${day}</text>`;
+    }
+  });
+  el.innerHTML = `<svg class="bar-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${bars}${labels}</svg>`;
+}
+
+// ---------- Activity log ----------
+async function loadActivity() {
+  const el = document.getElementById("activityFeed");
+  el.innerHTML = `<div class="empty-state">جارِ التحميل...</div>`;
+  try {
+    const { items } = await api("activity");
+    if (!items.length) { el.innerHTML = `<div class="empty-state">لا يوجد نشاط مسجّل بعد.</div>`; return; }
+    el.innerHTML = items.map(i => `<div class="activity-item">
+      <div class="ai-icon">${ACTIVITY_ICONS[i.action] || "🔹"}</div>
+      <div class="ai-body">
+        <div>${esc(i.summary)}</div>
+        <div class="ai-time">${timeAgo(i.created_at)} · ${fmtDate(i.created_at)}</div>
+      </div>
+    </div>`).join("");
+  } catch (e) { el.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
 }
 
 // ---------- Broadcast ----------
@@ -143,68 +247,87 @@ document.getElementById("bcSendBtn").addEventListener("click", async () => {
   }
 });
 
-// ---------- Dashboard ----------
-async function loadDashboard() {
-  const grid = document.getElementById("dashboardStats");
-  grid.innerHTML = `<div class="stat-card"><div class="label">جارِ التحميل...</div></div>`;
-  try {
-    const d = await api("dashboard");
-    grid.innerHTML = `
-      <div class="stat-card"><div class="label">رصيد KOKORO المسبق</div><div class="value">${d.kokoroBalance != null ? money(d.kokoroBalance) + " USDT" : "—"}</div>${d.kokoroError ? `<div class="muted" style="font-size:12px;margin-top:6px">${esc(d.kokoroError)}</div>` : ""}</div>
-      <div class="stat-card"><div class="label">عدد العملاء</div><div class="value">${d.usersCount}</div></div>
-      <div class="stat-card"><div class="label">إجمالي الطلبات</div><div class="value">${d.ordersCount}</div></div>
-      <div class="stat-card"><div class="label">الإيرادات (المُسلَّمة)</div><div class="value">${money(d.revenue)} USDT</div></div>
-      <div class="stat-card"><div class="label">المنتجات المفعّلة</div><div class="value">${d.activeProducts}</div></div>
-      <div class="stat-card ${d.pendingDeliveries > 0 ? "warn" : ""}"><div class="label">بانتظار تسليم يدوي</div><div class="value">${d.pendingDeliveries}</div></div>
-    `;
-  } catch (e) { grid.innerHTML = `<div class="stat-card"><div class="label">خطأ</div><div class="value" style="font-size:14px">${esc(e.message)}</div></div>`; }
-}
-
 // ---------- Products (KOKORO) ----------
 async function loadProducts() {
   const tbody = document.querySelector("#productsTable tbody");
-  tbody.innerHTML = `<tr><td colspan="9">جارِ التحميل...</td></tr>`;
+  tbody.innerHTML = skeletonRows(10);
+  selectedProductIds.clear();
+  updateProductsBulkBar();
   try {
     const { products } = await api("products");
     currentProducts = products || [];
     renderProducts();
-  } catch (e) { tbody.innerHTML = `<tr><td colspan="9">${esc(e.message)}</td></tr>`; }
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="10">${esc(e.message)}</td></tr>`; }
 }
 function renderProducts() {
   const q = document.getElementById("productsSearch").value.trim().toLowerCase();
   const tbody = document.querySelector("#productsTable tbody");
   const rows = currentProducts.filter(p => !q || p.name.toLowerCase().includes(q) || (p.custom_name || "").toLowerCase().includes(q));
-  if (!rows.length) { tbody.innerHTML = `<tr><td colspan="9">لا توجد منتجات.</td></tr>`; return; }
+  if (!rows.length) { tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state">لا توجد منتجات.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(p => {
     const isFixed = p.markup_type === "fixed";
     const clientPrice = isFixed ? Number(p.price || 0) + Number(p.markup || 0) : Number(p.price || 0) * (1 + Number(p.markup || 0) / 100);
+    const lowStock = Number(p.stock) <= 3;
     return `<tr data-id="${esc(p.id)}">
+      <td><input type="checkbox" class="row-select" ${selectedProductIds.has(String(p.id)) ? "checked" : ""}></td>
       <td class="muted">${esc(p.name)}</td>
-      <td><input type="text" class="name-input" value="${esc(p.custom_name || "")}" placeholder="${esc(p.name)}" style="width:160px"></td>
+      <td><input type="text" class="name-input" value="${esc(p.custom_name || "")}" placeholder="${esc(p.name)}" style="width:150px"></td>
       <td>${money(p.price)}</td>
       <td><b class="client-price-preview">${money(clientPrice)}</b></td>
-      <td>${p.stock}</td>
+      <td class="${lowStock ? "low-stock" : ""}">${p.stock}${lowStock ? " ⚠️" : ""}</td>
       <td>
         <div style="display:flex;gap:4px;align-items:center">
-          <input type="number" class="markup-input" value="${p.markup}" step="0.5" style="width:65px">
-          <select class="markup-type-input" style="width:60px;padding:4px">
+          <input type="number" class="markup-input" value="${p.markup}" step="0.5" style="width:60px">
+          <select class="markup-type-input" style="width:56px;padding:4px">
             <option value="percent" ${!isFixed ? "selected" : ""}>%</option>
             <option value="fixed" ${isFixed ? "selected" : ""}>$</option>
           </select>
         </div>
       </td>
       <td><button class="switch ${p.enabled ? "on" : ""}" data-action="toggle" title="فعّل/عطّل المنتج فوراً"></button></td>
-      <td><input type="text" class="emoji-input" value="${esc(p.emoji || "")}" placeholder="🙂" style="width:60px"></td>
+      <td><input type="text" class="emoji-input" value="${esc(p.emoji || "")}" placeholder="🙂" style="width:56px"></td>
       <td><button class="btn btn-sm btn-primary" data-action="save">حفظ</button></td>
     </tr>`;
   }).join("");
 }
 document.getElementById("productsSearch").addEventListener("input", renderProducts);
+
+document.getElementById("productsSelectAll").addEventListener("change", e => {
+  document.querySelectorAll("#productsTable .row-select").forEach(cb => {
+    cb.checked = e.target.checked;
+    const id = cb.closest("tr").dataset.id;
+    if (e.target.checked) selectedProductIds.add(id); else selectedProductIds.delete(id);
+  });
+  updateProductsBulkBar();
+});
+document.querySelector("#productsTable tbody").addEventListener("change", e => {
+  if (!e.target.classList.contains("row-select")) return;
+  const id = e.target.closest("tr").dataset.id;
+  if (e.target.checked) selectedProductIds.add(id); else selectedProductIds.delete(id);
+  updateProductsBulkBar();
+});
+function updateProductsBulkBar() {
+  const bar = document.getElementById("productsBulkBar");
+  const n = selectedProductIds.size;
+  bar.classList.toggle("hidden", n === 0);
+  document.getElementById("productsBulkCount").textContent = n;
+}
+document.getElementById("productsBulkBar").addEventListener("click", async e => {
+  const bulk = e.target.dataset.bulk;
+  if (!bulk) return;
+  const enabled = bulk === "enable";
+  const ids = Array.from(selectedProductIds);
+  try {
+    await Promise.all(ids.map(id => api("products", { method: "PATCH", body: { id, enabled } })));
+    toast(`تم ${enabled ? "تفعيل" : "إخفاء"} ${ids.length} منتج ✅`);
+    loadProducts();
+  } catch (err) { toast(err.message, "error"); }
+});
+
 document.querySelector("#productsTable tbody").addEventListener("click", async e => {
   const tr = e.target.closest("tr");
   if (!tr) return;
   const id = tr.dataset.id;
-
   if (e.target.dataset.action === "toggle") {
     const willEnable = !e.target.classList.contains("on");
     e.target.classList.toggle("on");
@@ -215,14 +338,13 @@ document.querySelector("#productsTable tbody").addEventListener("click", async e
       const p = currentProducts.find(x => String(x.id) === String(id));
       if (p) p.enabled = willEnable;
     } catch (err) {
-      e.target.classList.toggle("on"); // رجّع الحالة القديمة لو فشل الحفظ
+      e.target.classList.toggle("on");
       toast(err.message, "error");
     } finally {
       e.target.disabled = false;
     }
     return;
   }
-
   if (e.target.dataset.action === "save") {
     const markup = tr.querySelector(".markup-input").value;
     const markup_type = tr.querySelector(".markup-type-input").value;
@@ -254,26 +376,30 @@ function updateClientPricePreview(tr) {
   tr.querySelector(".client-price-preview").textContent = money(clientPrice);
 }
 
-// ---------- Manual products ----------
+// ---------- Manual products (card grid) ----------
 async function loadManual() {
-  const tbody = document.querySelector("#manualTable tbody");
-  tbody.innerHTML = `<tr><td colspan="6">جارِ التحميل...</td></tr>`;
+  const grid = document.getElementById("manualGrid");
+  grid.innerHTML = Array.from({ length: 3 }).map(() => `<div class="product-card"><span class="skel" style="width:70%"></span><span class="skel" style="height:22px;margin-top:8px"></span><span class="skel" style="height:30px;margin-top:8px"></span></div>`).join("");
   try {
     const { products } = await api("products-manual");
-    if (!products.length) { tbody.innerHTML = `<tr><td colspan="6">لا توجد منتجات يدوية بعد.</td></tr>`; return; }
-    tbody.innerHTML = products.map(p => `<tr data-id="${p.id}">
-      <td>${p.emoji ? esc(p.emoji) + " " : ""}${esc(p.name)}</td>
-      <td>${money(p.price)}</td>
-      <td>${p.min_order}</td>
-      <td>${p.stock}</td>
-      <td><span class="badge ${p.enabled ? "badge-green" : "badge-red"}">${p.enabled ? "مفعّل" : "معطّل"}</span></td>
-      <td>
+    if (!products.length) { grid.innerHTML = `<div class="empty-state">لا توجد منتجات يدوية بعد. دوس "+ منتج جديد" للبدء.</div>`; return; }
+    grid.innerHTML = products.map(p => `<div class="product-card" data-id="${p.id}">
+      <div class="pc-head">
+        <div class="pc-title">${p.emoji ? esc(p.emoji) + " " : ""}${esc(p.name)}</div>
+        <span class="badge ${p.enabled ? "badge-green" : "badge-red"}">${p.enabled ? "مفعّل" : "معطّل"}</span>
+      </div>
+      <div class="pc-price">${money(p.price)} <span style="font-size:12px;color:var(--text-muted);font-weight:400">USDT</span></div>
+      <div class="pc-meta">
+        <span>📦 المخزون: <b class="${p.stock === 0 ? "low-stock" : ""}">${p.stock}</b></span>
+        <span>الحد الأدنى: ${p.min_order}</span>
+      </div>
+      <div class="pc-actions">
         <button class="btn btn-sm" data-action="stock">المخزون</button>
         <button class="btn btn-sm" data-action="edit">تعديل</button>
         <button class="btn btn-sm btn-danger" data-action="delete">حذف</button>
-      </td>
-    </tr>`).join("");
-  } catch (e) { tbody.innerHTML = `<tr><td colspan="6">${esc(e.message)}</td></tr>`; }
+      </div>
+    </div>`).join("");
+  } catch (e) { grid.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
 }
 
 function manualProductForm(p = {}) {
@@ -308,10 +434,10 @@ document.getElementById("addManualBtn").addEventListener("click", () => {
   bindManualForm(null);
 });
 
-document.querySelector("#manualTable tbody").addEventListener("click", async e => {
-  const tr = e.target.closest("tr");
-  if (!tr) return;
-  const id = tr.dataset.id;
+document.getElementById("manualGrid").addEventListener("click", async e => {
+  const card = e.target.closest(".product-card");
+  if (!card) return;
+  const id = card.dataset.id;
   const action = e.target.dataset.action;
   if (action === "delete") {
     if (!confirm("تأكيد حذف هذا المنتج؟ سيتم حذف مخزونه أيضاً.")) return;
@@ -412,12 +538,12 @@ async function refreshStockList(productId) {
 let usersDebounce;
 async function loadUsers() {
   const tbody = document.querySelector("#usersTable tbody");
-  tbody.innerHTML = `<tr><td colspan="6">جارِ التحميل...</td></tr>`;
+  tbody.innerHTML = skeletonRows(6);
   const q = document.getElementById("usersSearch").value.trim();
   try {
     const { users } = await api(`users${q ? `?q=${encodeURIComponent(q)}` : ""}`);
-    if (!users.length) { tbody.innerHTML = `<tr><td colspan="6">لا يوجد عملاء.</td></tr>`; return; }
-    tbody.innerHTML = users.map(u => `<tr data-id="${u.id}">
+    if (!users.length) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">لا يوجد عملاء.</div></td></tr>`; return; }
+    tbody.innerHTML = users.map(u => `<tr class="clickable" data-id="${u.id}">
       <td>${u.id}</td>
       <td>${u.username ? "@" + esc(u.username) : "-"}</td>
       <td>${u.language === "en" ? "English" : "العربية"}</td>
@@ -429,8 +555,14 @@ async function loadUsers() {
 }
 document.getElementById("usersSearch").addEventListener("input", () => { clearTimeout(usersDebounce); usersDebounce = setTimeout(loadUsers, 350); });
 document.querySelector("#usersTable tbody").addEventListener("click", e => {
-  if (e.target.dataset.action !== "adjust") return;
-  const id = e.target.closest("tr").dataset.id;
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  const id = tr.dataset.id;
+  if (e.target.dataset.action === "adjust") { openAdjustModal(id); return; }
+  openUserDetail(id);
+});
+
+function openAdjustModal(id) {
   openModal(`تعديل رصيد العميل #${id}`, `
     <label>القيمة (استخدم سالب للخصم، مثال: -5)</label>
     <input id="adj_delta" type="number" step="0.01" placeholder="10">
@@ -453,22 +585,54 @@ document.querySelector("#usersTable tbody").addEventListener("click", e => {
       loadUsers();
     } catch (err) { toast(err.message, "error"); }
   });
-});
+}
+
+async function openUserDetail(id) {
+  openModal(`العميل #${id}`, `<div class="empty-state">جارِ التحميل...</div>`, { large: true });
+  try {
+    const { user, orders, transactions } = await api(`users?detail=${id}`);
+    const ordersRows = orders.length
+      ? orders.slice(0, 10).map(o => `<tr><td>#${o.id}</td><td>${esc(o.product_name || "-")}</td><td>${money(o.total)}</td><td><span class="badge ${STATUS_BADGE[o.status] || "badge-blue"}">${STATUS_LABELS[o.status] || o.status}</span></td><td>${fmtDate(o.created_at)}</td></tr>`).join("")
+      : `<tr><td colspan="5" class="muted">لا توجد طلبات.</td></tr>`;
+    const txRows = transactions.length
+      ? transactions.slice(0, 10).map(t => `<tr><td>${esc(t.type)}</td><td style="color:${Number(t.amount) < 0 ? "var(--danger)" : "var(--success)"}">${Number(t.amount) > 0 ? "+" : ""}${money(t.amount)}</td><td>${esc(t.description || "-")}</td><td>${fmtDate(t.created_at)}</td></tr>`).join("")
+      : `<tr><td colspan="4" class="muted">لا توجد معاملات.</td></tr>`;
+    modalBody.innerHTML = `
+      <div class="detail-grid">
+        <div class="detail-item"><div class="di-label">اليوزر</div><div class="di-value">${user.username ? "@" + esc(user.username) : "-"}</div></div>
+        <div class="detail-item"><div class="di-label">الرصيد</div><div class="di-value">${money(user.balance)} USDT</div></div>
+        <div class="detail-item"><div class="di-label">اللغة</div><div class="di-value">${user.language === "en" ? "English" : "العربية"}</div></div>
+        <div class="detail-item"><div class="di-label">تاريخ التسجيل</div><div class="di-value" style="font-size:12px">${fmtDate(user.created_at)}</div></div>
+      </div>
+      <div><b style="font-size:13px">آخر الطلبات</b></div>
+      <table class="mini-table"><thead><tr><th>#</th><th>المنتج</th><th>المبلغ</th><th>الحالة</th><th>التاريخ</th></tr></thead><tbody>${ordersRows}</tbody></table>
+      <div><b style="font-size:13px">آخر المعاملات</b></div>
+      <table class="mini-table"><thead><tr><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th></tr></thead><tbody>${txRows}</tbody></table>
+      <div class="modal-actions">
+        <button class="btn" id="ud_close">إغلاق</button>
+        <button class="btn btn-primary" id="ud_adjust">تعديل الرصيد</button>
+      </div>
+    `;
+    document.getElementById("ud_close").addEventListener("click", closeModal);
+    document.getElementById("ud_adjust").addEventListener("click", () => openAdjustModal(id));
+  } catch (e) { modalBody.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
+}
 
 // ---------- Orders ----------
 let ordersDebounce;
 async function loadOrders() {
   const tbody = document.querySelector("#ordersTable tbody");
-  tbody.innerHTML = `<tr><td colspan="9">جارِ التحميل...</td></tr>`;
+  tbody.innerHTML = skeletonRows(9);
   const q = document.getElementById("ordersSearch").value.trim();
   const status = document.getElementById("ordersStatusFilter").value;
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (status) params.set("status", status);
+  document.getElementById("ordersExport").href = `/api/orders?format=csv${params.toString() ? "&" + params.toString() : ""}`;
   try {
     const { orders } = await api(`orders${params.toString() ? "?" + params.toString() : ""}`);
-    if (!orders.length) { tbody.innerHTML = `<tr><td colspan="9">لا توجد طلبات.</td></tr>`; return; }
-    tbody.innerHTML = orders.map(o => `<tr data-id="${o.id}">
+    if (!orders.length) { tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">لا توجد طلبات.</div></td></tr>`; return; }
+    tbody.innerHTML = orders.map(o => `<tr class="clickable" data-id="${o.id}">
       <td>#${o.id}</td>
       <td>${o.telegram_id}</td>
       <td>${esc(o.product_name || "-")}</td>
@@ -487,45 +651,77 @@ async function loadOrders() {
 document.getElementById("ordersSearch").addEventListener("input", () => { clearTimeout(ordersDebounce); ordersDebounce = setTimeout(loadOrders, 350); });
 document.getElementById("ordersStatusFilter").addEventListener("change", loadOrders);
 document.querySelector("#ordersTable tbody").addEventListener("click", async e => {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  const id = tr.dataset.id;
   const action = e.target.dataset.action;
-  if (!action) return;
-  const id = e.target.closest("tr").dataset.id;
+  if (!action) { openOrderDetail(id); return; }
   if (action === "cancel") {
     if (!confirm("تأكيد إلغاء هذا الطلب؟")) return;
     try { await api("orders", { method: "PATCH", body: { id, action: "cancel" } }); toast("تم الإلغاء ✅"); loadOrders(); }
     catch (err) { toast(err.message, "error"); }
     return;
   }
-  if (action === "deliver") {
-    openModal(`تسليم الطلب #${id}`, `
-      <label>المحتوى المُسلَّم للعميل (حساب/كود...)</label>
-      <textarea id="dv_content" placeholder="user:pass"></textarea>
-      <div class="modal-actions">
-        <button class="btn" id="dv_cancel">إلغاء</button>
-        <button class="btn btn-primary" id="dv_save">تسليم وإشعار العميل</button>
-      </div>
-    `);
-    document.getElementById("dv_cancel").addEventListener("click", closeModal);
-    document.getElementById("dv_save").addEventListener("click", async () => {
-      const content = document.getElementById("dv_content").value.trim();
-      if (!content) { toast("المحتوى مطلوب", "error"); return; }
-      try {
-        const r = await api("orders", { method: "PATCH", body: { id, action: "deliver", content } });
-        toast(r.notified ? "تم التسليم وإشعار العميل ✅" : "تم التسليم، لكن تعذر إشعار العميل ⚠️", r.notified ? "success" : "error");
-        closeModal();
-        loadOrders();
-      } catch (err) { toast(err.message, "error"); }
-    });
-  }
+  if (action === "deliver") { openDeliverModal(id); }
 });
+
+function openDeliverModal(id) {
+  openModal(`تسليم الطلب #${id}`, `
+    <label>المحتوى المُسلَّم للعميل (حساب/كود...)</label>
+    <textarea id="dv_content" placeholder="user:pass"></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="dv_cancel">إلغاء</button>
+      <button class="btn btn-primary" id="dv_save">تسليم وإشعار العميل</button>
+    </div>
+  `);
+  document.getElementById("dv_cancel").addEventListener("click", closeModal);
+  document.getElementById("dv_save").addEventListener("click", async () => {
+    const content = document.getElementById("dv_content").value.trim();
+    if (!content) { toast("المحتوى مطلوب", "error"); return; }
+    try {
+      const r = await api("orders", { method: "PATCH", body: { id, action: "deliver", content } });
+      toast(r.notified ? "تم التسليم وإشعار العميل ✅" : "تم التسليم، لكن تعذر إشعار العميل ⚠️", r.notified ? "success" : "error");
+      closeModal();
+      loadOrders();
+    } catch (err) { toast(err.message, "error"); }
+  });
+}
+
+async function openOrderDetail(id) {
+  openModal(`تفاصيل الطلب #${id}`, `<div class="empty-state">جارِ التحميل...</div>`);
+  try {
+    const { order: o } = await api(`orders?detail=${id}`);
+    modalBody.innerHTML = `
+      <div class="detail-grid">
+        <div class="detail-item"><div class="di-label">الحالة</div><div class="di-value"><span class="badge ${STATUS_BADGE[o.status] || "badge-blue"}">${STATUS_LABELS[o.status] || o.status}</span></div></div>
+        <div class="detail-item"><div class="di-label">الإجمالي</div><div class="di-value">${money(o.total)} USDT</div></div>
+        <div class="detail-item"><div class="di-label">العميل</div><div class="di-value">${o.telegram_id}</div></div>
+        <div class="detail-item"><div class="di-label">الكمية</div><div class="di-value">${o.quantity}</div></div>
+        <div class="detail-item"><div class="di-label">طريقة الدفع</div><div class="di-value">${esc(o.payment_method || "-")}</div></div>
+        <div class="detail-item"><div class="di-label">المصدر</div><div class="di-value">${esc(o.source || "-")}</div></div>
+        <div class="detail-item"><div class="di-label">تاريخ الإنشاء</div><div class="di-value" style="font-size:12px">${fmtDate(o.created_at)}</div></div>
+        <div class="detail-item"><div class="di-label">تاريخ التسليم</div><div class="di-value" style="font-size:12px">${fmtDate(o.delivered_at)}</div></div>
+      </div>
+      <div><b style="font-size:13px">${esc(o.product_name || "-")}</b></div>
+      ${o.delivery_message ? `<div class="detail-block">${esc(o.delivery_message)}</div>` : `<div class="muted" style="font-size:13px">لا يوجد محتوى تسليم مسجّل.</div>`}
+      <div class="modal-actions">
+        <button class="btn" id="od_close">إغلاق</button>
+        ${o.status === "paid" ? `<button class="btn btn-primary" id="od_deliver">تسليم</button>` : ""}
+      </div>
+    `;
+    document.getElementById("od_close").addEventListener("click", closeModal);
+    const dBtn = document.getElementById("od_deliver");
+    if (dBtn) dBtn.addEventListener("click", () => openDeliverModal(id));
+  } catch (e) { modalBody.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
+}
 
 // ---------- Transactions ----------
 async function loadTransactions() {
   const tbody = document.querySelector("#transactionsTable tbody");
-  tbody.innerHTML = `<tr><td colspan="5">جارِ التحميل...</td></tr>`;
+  tbody.innerHTML = skeletonRows(5);
   try {
     const { transactions } = await api("transactions");
-    if (!transactions.length) { tbody.innerHTML = `<tr><td colspan="5">لا توجد معاملات.</td></tr>`; return; }
+    if (!transactions.length) { tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">لا توجد معاملات.</div></td></tr>`; return; }
     tbody.innerHTML = transactions.map(t => `<tr>
       <td>${t.telegram_id}</td>
       <td>${esc(t.type)}</td>
@@ -539,10 +735,10 @@ async function loadTransactions() {
 // ---------- Email activation list ----------
 async function loadActivation() {
   const tbody = document.querySelector("#activationTable tbody");
-  tbody.innerHTML = `<tr><td colspan="2">جارِ التحميل...</td></tr>`;
+  tbody.innerHTML = skeletonRows(2);
   try {
     const { items } = await api("email-activation");
-    if (!items.length) { tbody.innerHTML = `<tr><td colspan="2">لا توجد منتجات في هذه القائمة.</td></tr>`; return; }
+    if (!items.length) { tbody.innerHTML = `<tr><td colspan="2"><div class="empty-state">لا توجد منتجات في هذه القائمة.</div></td></tr>`; return; }
     tbody.innerHTML = items.map(i => `<tr data-id="${i.id}">
       <td>${esc(i.name_contains)}</td>
       <td><button class="btn btn-sm btn-danger" data-action="delete">حذف</button></td>
