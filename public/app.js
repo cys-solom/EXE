@@ -41,7 +41,11 @@ function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 function money(n) { return Number(n || 0).toFixed(2); }
-function orderCode(id) { return id == null ? "-" : `EXE-${String(id).padStart(6, "0")}`; }
+function orderCode(order) {
+  if (order == null) return "-";
+  if (typeof order === "object") return order.order_code || `EXE-${String(order.id).padStart(6, "0")}`;
+  return `EXE-${String(order).padStart(6, "0")}`;
+}
 function fmtDate(d) { if (!d) return "-"; const dt = new Date(d); return dt.toLocaleDateString("ar-EG") + " " + dt.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }); }
 function timeAgo(d) {
   const secs = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
@@ -791,7 +795,7 @@ async function openUserDetail(id) {
   try {
     const { user, orders, transactions } = await api(`users?detail=${id}`);
     const ordersRows = orders.length
-      ? orders.slice(0, 10).map(o => `<tr><td>${orderCode(o.id)}</td><td>${esc(o.product_name || "-")}</td><td>${money(o.total)}</td><td><span class="badge ${STATUS_BADGE[o.status] || "badge-blue"}">${STATUS_LABELS[o.status] || o.status}</span></td><td>${fmtDate(o.created_at)}</td></tr>`).join("")
+      ? orders.slice(0, 10).map(o => `<tr><td>${orderCode(o)}</td><td>${esc(o.product_name || "-")}</td><td>${money(o.total)}</td><td><span class="badge ${STATUS_BADGE[o.status] || "badge-blue"}">${STATUS_LABELS[o.status] || o.status}</span></td><td>${fmtDate(o.created_at)}</td></tr>`).join("")
       : `<tr><td colspan="5" class="muted">لا توجد طلبات.</td></tr>`;
     const txRows = transactions.length
       ? transactions.slice(0, 10).map(t => `<tr><td>${esc(t.type)}</td><td style="color:${Number(t.amount) < 0 ? "var(--danger)" : "var(--success)"}">${Number(t.amount) > 0 ? "+" : ""}${money(t.amount)}</td><td>${esc(t.description || "-")}</td><td>${fmtDate(t.created_at)}</td></tr>`).join("")
@@ -832,7 +836,7 @@ async function loadOrders() {
     const { orders } = await api(`orders${params.toString() ? "?" + params.toString() : ""}`);
     if (!orders.length) { tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">لا توجد طلبات.</div></td></tr>`; return; }
     tbody.innerHTML = orders.map(o => `<tr class="clickable" data-id="${o.id}">
-      <td><code>${orderCode(o.id)}</code></td>
+      <td><code>${orderCode(o)}</code></td>
       <td>${o.telegram_id}</td>
       <td>${esc(o.product_name || "-")}</td>
       <td>${o.quantity}</td>
@@ -890,6 +894,7 @@ async function openOrderDetail(id) {
   openModal(`تفاصيل الطلب ${orderCode(id)}`, `<div class="empty-state">جارِ التحميل...</div>`);
   try {
     const { order: o } = await api(`orders?detail=${id}`);
+    modalTitle.textContent = `تفاصيل الطلب ${orderCode(o)}`;
     modalBody.innerHTML = `
       <div class="detail-grid">
         <div class="detail-item"><div class="di-label">الحالة</div><div class="di-value"><span class="badge ${STATUS_BADGE[o.status] || "badge-blue"}">${STATUS_LABELS[o.status] || o.status}</span></div></div>

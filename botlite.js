@@ -404,7 +404,7 @@ async function entregaManualPaso(chatId, texto) {
       delete global.entregaSessions[chatId];
       return bot.sendMessage(chatId, `❌ No pude enviarle el mensaje al cliente <code>${clienteId}</code>.\n\n${htmlEscape(e.message)}\n\nPuede que haya bloqueado el bot.`, { parse_mode: "HTML" });
     }
-    await sendDeliveryFile(clienteId, order.id, contenido);
+    await sendDeliveryFile(clienteId, order, contenido);
 
     // Boton de recompra, igual que en la entrega normal
     try {
@@ -1342,25 +1342,43 @@ async function showPaymentMethods(chatId, messageId, index, qty) {
 }
 
 // ============================================================
-//  Codigo de orden legible: EXE-000123 (deriva del id numerico,
-//  siempre unico y sin necesidad de columna nueva en la base).
+//  Codigo de orden publico: EXE-7K3F9A (letras+numeros al azar,
+//  se genera una sola vez al crear la orden y se guarda en orders.order_code
+//  — a proposito NO correlativo, para no revelar volumen de ventas).
 // ============================================================
 const ORDER_CODE_PREFIX = "EXE";
-function orderCode(id) {
-  return `${ORDER_CODE_PREFIX}-${String(id).padStart(6, "0")}`;
+const ORDER_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // sin O,0,I,1,L (se confunden)
+function randomOrderCode() {
+  let s = "";
+  for (let i = 0; i < 6; i++) s += ORDER_CODE_CHARS[Math.floor(Math.random() * ORDER_CODE_CHARS.length)];
+  return `${ORDER_CODE_PREFIX}-${s}`;
+}
+async function generateUniqueOrderCode() {
+  for (let i = 0; i < 6; i++) {
+    const code = randomOrderCode();
+    const { data } = await supabase.from("orders").select("id").eq("order_code", code).maybeSingle();
+    if (!data) return code;
+  }
+  return `${ORDER_CODE_PREFIX}-${Date.now().toString(36).toUpperCase().slice(-6)}`; // fallback ultra raro
+}
+// order puede ser el objeto completo (usa su order_code real) o solo el id numerico
+// (ordenes viejas sin codigo asignado todavia: se muestra un formato de respaldo).
+function orderCode(order) {
+  if (order && typeof order === "object") return order.order_code || `${ORDER_CODE_PREFIX}-${String(order.id).padStart(6, "0")}`;
+  return `${ORDER_CODE_PREFIX}-${String(order).padStart(6, "0")}`;
 }
 
 // Manda el contenido entregado tambien como archivo .txt adjunto (ademas del
 // mensaje de texto), para pedidos con varias cuentas/codigos donde un archivo
 // es mas comodo de guardar/copiar que un mensaje largo.
-async function sendDeliveryFile(chatId, orderId, content) {
+async function sendDeliveryFile(chatId, order, content) {
   try {
     const buffer = Buffer.from(String(content || "").trim(), "utf-8");
     if (!buffer.length) return; // nada que adjuntar
-    await bot.sendDocument(chatId, buffer, {}, { filename: `${orderCode(orderId)}.txt`, contentType: "text/plain" });
+    await bot.sendDocument(chatId, buffer, {}, { filename: `${orderCode(order)}.txt`, contentType: "text/plain" });
   } catch (e) {
     console.error("[DELIVERY FILE]", e.message);
-    sendAdminLog(`⚠️ <b>لم يتم إرسال ملف التسليم</b>\n\n🧾 الطلب <code>${orderCode(orderId)}</code>\n👤 ${chatId}\n❌ ${htmlEscape(e.message)}`).catch(() => {});
+    sendAdminLog(`⚠️ <b>لم يتم إرسال ملف التسليم</b>\n\n🧾 الطلب <code>${orderCode(order)}</code>\n👤 ${chatId}\n❌ ${htmlEscape(e.message)}`).catch(() => {});
   }
 }
 
@@ -1372,7 +1390,7 @@ function buildDeliveryText(t, order, content, remainingBalance) {
   let text = `${tg("✅", ICON("SUCCESS_NEW"))} <b>${t.orderDelivered}</b>\n`
     + `━━━━━━━━━━━━━━━\n\n`
     + `${tg(pe.emoji, pe.id)} <b>${htmlEscape(order.product_name)}</b>\n\n`
-    + `${tg("🧾", ICON("NOTE"))} ${t.order}: <code>${orderCode(order.id)}</code>\n`
+    + `${tg("🧾", ICON("NOTE"))} ${t.order}: <code>${orderCode(order)}</code>\n`
     + `${tg("💰", ICON("MONEY"))} ${t.amount}: <b>${money(order.total)} USDT</b>\n`;
   if (remainingBalance != null) text += `${tg("🔷", ICON("BLUE"))} ${t.remainingBalance}: <b>${money(remainingBalance)} USDT</b>\n`;
   else text += `${tg("🌟", ICON("STAR"))} ${t.seller}: <b>${SHOP_NAME}</b>\n`;
@@ -1485,7 +1503,8 @@ async function buyWithBalance(chatId, messageId, index, qty) {
 
   const { data: order } = await supabase.from("orders").insert({
     telegram_id: chatId, product_id: String(p.id), product_name: p.name, quantity: qty,
-    price: p.price, total, status: "paid", payment_method: "balance", source: p.kind === "manual" ? "manual" : "kokoro_api"
+    price: p.price, total, status: "paid", payment_method: "balance", source: p.kind === "manual" ? "manual" : "kokoro_api",
+    order_code: await generateUniqueOrderCode()
   }).select().single();
 
   // Productos de activacion manual: en vez de entregar, se le pide el correo
@@ -1510,7 +1529,7 @@ async function buyWithBalance(chatId, messageId, index, qty) {
         await bot.sendMessage(chatId, formatDeliveredProducts(String(delivery.content)), { parse_mode: "HTML", disable_web_page_preview: true });
       });
     }
-    if (order?.id) await sendDeliveryFile(chatId, order.id, delivery.content);
+    if (order?.id) await sendDeliveryFile(chatId, order, delivery.content);
     await sendAdminLog(`✅ COMPRA CONFIRMADA (Balance)\n\n👤 @${getUsername(chatId)}\n🆔 ${chatId}\n📦 ${p.name}\n🔢 ${qty}\n💰 ${money(total)} USDT\n🧾 #${order?.id || "-"}`);
     await sendReorderButton(chatId, t, { product_id: p.id, product_name: p.name, quantity: qty }, p.price);
     return;
@@ -1537,7 +1556,8 @@ async function showBinancePayment(chatId, messageId, index, qty) {
   await supabase.from("orders").update({ status: "cancelled" }).eq("telegram_id", chatId).eq("status", "waiting_payment");
   const { data: order } = await supabase.from("orders").insert({
     telegram_id: chatId, product_id: String(p.id), product_name: p.name, quantity: qty,
-    price: p.price, total, status: "waiting_payment", payment_method: "binance_pay", source: p.kind === "manual" ? "manual" : "kokoro_api"
+    price: p.price, total, status: "waiting_payment", payment_method: "binance_pay", source: p.kind === "manual" ? "manual" : "kokoro_api",
+    order_code: await generateUniqueOrderCode()
   }).select().single();
 
   sess(chatId).awaiting = "purchase_binance_orderid";
@@ -1575,7 +1595,8 @@ async function showBep20PaymentDirect(chatId, messageId, index, qty) {
   // Crear orden pendiente + pendiente BEP20 con monto unico
   const { data: order } = await supabase.from("orders").insert({
     telegram_id: chatId, product_id: String(p.id), product_name: p.name, quantity: qty,
-    price: p.price, total, status: "processing", payment_method: "bep20", source: p.kind === "manual" ? "manual" : "kokoro_api"
+    price: p.price, total, status: "processing", payment_method: "bep20", source: p.kind === "manual" ? "manual" : "kokoro_api",
+    order_code: await generateUniqueOrderCode()
   }).select().single();
 
   const { montoUnico } = await payments.createBep20Pending(supabase, { telegram_id: chatId, type: "purchase", order_id: order?.id, base: total });
@@ -1657,7 +1678,8 @@ async function confirmPurchaseBinance(chatId, orderId) {
   if (!order) {
     const { data } = await supabase.from("orders").insert({
       telegram_id: chatId, product_id: String(p.id), product_name: p.name, quantity: pp.qty,
-      price: p.price, total: pp.total, status: "paid", payment_method: "binance_pay", source: p.kind === "manual" ? "manual" : "kokoro_api", payment_order_id: clean
+      price: p.price, total: pp.total, status: "paid", payment_method: "binance_pay", source: p.kind === "manual" ? "manual" : "kokoro_api", payment_order_id: clean,
+      order_code: await generateUniqueOrderCode()
     }).select().single();
     order = data;
   }
@@ -1676,10 +1698,10 @@ async function confirmPurchaseBinance(chatId, orderId) {
 async function finishDelivery(chatId, messageId, t, order, p, qty, total, delivery, remainingBalance) {
   if (delivery.success) {
     if (order) await supabase.from("orders").update({ status: "delivered", delivery_message: String(delivery.content), delivered_at: new Date().toISOString(), kokoro_order_id: delivery.kokoroOrderId || null }).eq("id", order.id);
-    const text = buildDeliveryText(t, { id: order?.id || "-", product_name: p.name, total, quantity: qty }, String(delivery.content), remainingBalance);
+    const text = buildDeliveryText(t, { id: order?.id || "-", order_code: order?.order_code, product_name: p.name, total, quantity: qty }, String(delivery.content), remainingBalance);
     try { await bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: "HTML" }); }
     catch (e) { await bot.sendMessage(chatId, text, { parse_mode: "HTML" }); }
-    if (order?.id) await sendDeliveryFile(chatId, order.id, delivery.content);
+    if (order?.id) await sendDeliveryFile(chatId, order, delivery.content);
     await sendAdminLog(`✅ COMPRA CONFIRMADA\n\n👤 @${getUsername(chatId)}\n🆔 ${chatId}\n📦 ${p.name}\n🔢 ${qty}\n💰 ${money(total)} USDT\n🧾 #${order?.id || "-"}`);
     await sendReorderButton(chatId, t, { product_id: (order?.product_id || p.id), product_name: p.name, quantity: qty }, qty > 0 ? total / qty : total);
     return;
@@ -1859,7 +1881,7 @@ async function showOrderDetail(chatId, messageId, orderId) {
   else received = `${tg("🔄", ICON("REFRESH"))} <i>${t.processingDelivery}</i>`;
 
   const header = `${tg("📦", ICON("PAID_RED"))} <b>${t.myOrders}</b>\n\n`
-    + `${tg("🆔", ICON("BLUE"))} <b>${t.orderIdLabel}:</b> <code>${orderCode(order.id)}</code>\n`
+    + `${tg("🆔", ICON("BLUE"))} <b>${t.orderIdLabel}:</b> <code>${orderCode(order)}</code>\n`
     + `${tg(pe.emoji, pe.id)} <b>${t.product}:</b> ${htmlEscape(order.product_name || "-")}\n`
     + `${tg("🌟", ICON("STAR"))} <b>${t.seller}:</b> ${SHOP_NAME}\n`
     + `${tg("⭐", ICON("STAR"))} <b>${t.typeLabel}:</b> ${orderPaymentLabel(order.payment_method)}\n`
@@ -1907,11 +1929,17 @@ async function submitReportIssue(chatId, text) {
   }).select().single();
   if (error) { console.error("[TICKET] insert error:", error.message); return; }
 
+  let orderCodeLine = "";
+  if (orderId) {
+    const { data: relatedOrder } = await supabase.from("orders").select("id, order_code").eq("id", orderId).maybeSingle();
+    if (relatedOrder) orderCodeLine = `🧾 الطلب <code>${orderCode(relatedOrder)}</code>\n`;
+  }
+
   await bot.sendMessage(chatId, t.reportIssueReceived);
   await sendAdminLog(
     `⚠️ <b>تذكرة دعم جديدة #${ticket.id}</b>\n\n` +
     `👤 @${getUsername(chatId)}\n🆔 <code>${chatId}</code>\n` +
-    `${orderId ? `🧾 الطلب <code>${orderCode(orderId)}</code>\n` : ""}` +
+    orderCodeLine +
     `📝 ${htmlEscape(desc)}`
   );
 }

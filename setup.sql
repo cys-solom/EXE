@@ -133,9 +133,32 @@ CREATE TABLE IF NOT EXISTS orders (
   delivery_message  TEXT,                         -- contenido entregado
   payment_order_id  TEXT,                         -- id de pago del cliente (Binance Order ID / TXID)
   kokoro_order_id   TEXT,                          -- N° de orden en el BOT PRINCIPAL (para reclamar al proveedor)
+  order_code        TEXT,                          -- codigo publico EXE-XXXXXX (letras+numeros, no correlativo)
   created_at        TIMESTAMPTZ DEFAULT now(),
   delivered_at      TIMESTAMPTZ
 );
+
+-- Por si la tabla orders ya existia sin el codigo publico:
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_code TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS orders_order_code_uniq ON orders (order_code) WHERE order_code IS NOT NULL;
+-- Rellena un codigo a las ordenes viejas que no tengan uno todavia (letras+numeros al azar, sin caracteres ambiguos).
+DO $$
+DECLARE
+  r RECORD;
+  chars TEXT := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  code TEXT;
+BEGIN
+  FOR r IN SELECT id FROM orders WHERE order_code IS NULL LOOP
+    LOOP
+      code := 'EXE-' || (
+        SELECT string_agg(substr(chars, (random() * length(chars))::int + 1, 1), '')
+        FROM generate_series(1, 6)
+      );
+      EXIT WHEN NOT EXISTS (SELECT 1 FROM orders WHERE order_code = code);
+    END LOOP;
+    UPDATE orders SET order_code = code WHERE id = r.id;
+  END LOOP;
+END $$;
 
 -- Renombrar external_order_id -> payment_order_id (si venias de una version anterior):
 DO $$
