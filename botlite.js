@@ -1319,19 +1319,27 @@ async function showPaymentMethods(chatId, messageId, index, qty) {
 }
 
 // ============================================================
-//  Entrega (formato IDENTICO al bot principal) — image 7
+//  Codigo de orden legible: EXE-000123 (deriva del id numerico,
+//  siempre unico y sin necesidad de columna nueva en la base).
+// ============================================================
+const ORDER_CODE_PREFIX = "EXE";
+function orderCode(id) {
+  return `${ORDER_CODE_PREFIX}-${String(id).padStart(6, "0")}`;
+}
+
+// ============================================================
+//  Entrega — pantalla premium con el codigo de orden bien visible
 // ============================================================
 function buildDeliveryText(t, order, content, remainingBalance) {
   const pe = productTextEmoji(order.product_name);
-  let text = `${tg("✅", ICON("SUCCESS_NEW"))} <b>${t.paymentVerified}</b>\n\n`
-    + `${tg(pe.emoji, pe.id)} ${t.product}: ${htmlEscape(order.product_name)}\n`
-    + `${tg("📦", ICON("PAID_RED"))} ${t.order}: #${order.id}\n`
-    + `${tg("💰", ICON("MONEY"))} ${t.amount}: ${money(order.total)} USDT\n`;
-  if (remainingBalance != null) text += `${tg("🔷", ICON("BLUE"))} ${t.remainingBalance}: ${money(remainingBalance)} USDT\n`;
-  else text += `${tg("🌟", ICON("STAR"))} ${t.seller}: ${SHOP_NAME}\n`;
-  text += `\n${tg("✅", ICON("SUCCESS_NEW"))} <b>${t.orderDelivered}</b>\n\n`
+  let text = `${tg("✅", ICON("SUCCESS_NEW"))} <b>${t.orderDelivered}</b>\n`
     + `━━━━━━━━━━━━━━━\n\n`
-    + `${tg("⚡", ICON("LIGHTNING"))} <b>${Number(order.quantity || 1) > 1 ? t.yourProducts : t.yourProduct}:</b>\n\n`
+    + `${tg(pe.emoji, pe.id)} <b>${htmlEscape(order.product_name)}</b>\n\n`
+    + `${tg("🧾", ICON("NOTE"))} ${t.order}: <code>${orderCode(order.id)}</code>\n`
+    + `${tg("💰", ICON("MONEY"))} ${t.amount}: <b>${money(order.total)} USDT</b>\n`;
+  if (remainingBalance != null) text += `${tg("🔷", ICON("BLUE"))} ${t.remainingBalance}: <b>${money(remainingBalance)} USDT</b>\n`;
+  else text += `${tg("🌟", ICON("STAR"))} ${t.seller}: <b>${SHOP_NAME}</b>\n`;
+  text += `\n${tg("⚡", ICON("LIGHTNING"))} <b>${Number(order.quantity || 1) > 1 ? t.yourProducts : t.yourProduct}:</b>\n\n`
     + `${formatDeliveredProducts(content)}`;
   return text;
 }
@@ -1812,7 +1820,7 @@ async function showOrderDetail(chatId, messageId, orderId) {
   else received = `${tg("🔄", ICON("REFRESH"))} <i>${t.processingDelivery}</i>`;
 
   const header = `${tg("📦", ICON("PAID_RED"))} <b>${t.myOrders}</b>\n\n`
-    + `${tg("🆔", ICON("BLUE"))} <b>${t.orderIdLabel}:</b> <code>${order.id}</code>\n`
+    + `${tg("🆔", ICON("BLUE"))} <b>${t.orderIdLabel}:</b> <code>${orderCode(order.id)}</code>\n`
     + `${tg(pe.emoji, pe.id)} <b>${t.product}:</b> ${htmlEscape(order.product_name || "-")}\n`
     + `${tg("🌟", ICON("STAR"))} <b>${t.seller}:</b> ${SHOP_NAME}\n`
     + `${tg("⭐", ICON("STAR"))} <b>${t.typeLabel}:</b> ${orderPaymentLabel(order.payment_method)}\n`
@@ -1864,7 +1872,7 @@ async function submitReportIssue(chatId, text) {
   await sendAdminLog(
     `⚠️ <b>تذكرة دعم جديدة #${ticket.id}</b>\n\n` +
     `👤 @${getUsername(chatId)}\n🆔 <code>${chatId}</code>\n` +
-    `${orderId ? `🧾 الطلب #${orderId}\n` : ""}` +
+    `${orderId ? `🧾 الطلب <code>${orderCode(orderId)}</code>\n` : ""}` +
     `📝 ${htmlEscape(desc)}`
   );
 }

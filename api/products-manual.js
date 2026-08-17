@@ -47,7 +47,7 @@ module.exports = requireAuth(async (req, res) => {
       const { error: stockErr } = await supabase.from("stock_manual").insert(rows);
       if (stockErr) return res.status(200).json({ product: data, stockError: stockErr.message });
       added = rows.length;
-      if (notify !== false) broadcast = await announceStock(supabase, data.name, data.emoji);
+      if (notify !== false) broadcast = await announceStock(supabase, data);
     }
 
     logActivity(supabase, "manual_product_create", `منتج يدوي جديد: ${data.name}${added ? ` (+${added} مخزون)` : ""}`, { id: data.id });

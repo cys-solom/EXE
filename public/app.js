@@ -41,6 +41,7 @@ function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 function money(n) { return Number(n || 0).toFixed(2); }
+function orderCode(id) { return id == null ? "-" : `EXE-${String(id).padStart(6, "0")}`; }
 function fmtDate(d) { if (!d) return "-"; const dt = new Date(d); return dt.toLocaleDateString("ar-EG") + " " + dt.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }); }
 function timeAgo(d) {
   const secs = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
@@ -148,7 +149,7 @@ async function loadTickets() {
     tbody.innerHTML = tickets.map(t => `<tr class="clickable" data-id="${t.id}">
       <td>#${t.id}</td>
       <td>${t.telegram_id}</td>
-      <td>${t.order_id ? "#" + t.order_id : "-"}</td>
+      <td>${t.order_id ? orderCode(t.order_id) : "-"}</td>
       <td style="white-space:normal;max-width:280px">${esc((t.description || "").slice(0, 80))}${(t.description || "").length > 80 ? "…" : ""}</td>
       <td><span class="badge ${t.status === "open" ? "badge-yellow" : "badge-green"}">${t.status === "open" ? "مفتوحة" : "مغلقة"}</span></td>
       <td>${fmtDate(t.created_at)}</td>
@@ -172,7 +173,7 @@ async function openTicketDetail(id) {
     modalBody.innerHTML = `
       <div class="detail-grid">
         <div class="detail-item"><div class="di-label">العميل</div><div class="di-value">${t.telegram_id}</div></div>
-        <div class="detail-item"><div class="di-label">الطلب المرتبط</div><div class="di-value">${t.order_id ? "#" + t.order_id : "-"}</div></div>
+        <div class="detail-item"><div class="di-label">الطلب المرتبط</div><div class="di-value">${t.order_id ? orderCode(t.order_id) : "-"}</div></div>
         <div class="detail-item"><div class="di-label">الحالة</div><div class="di-value"><span class="badge ${t.status === "open" ? "badge-yellow" : "badge-green"}">${t.status === "open" ? "مفتوحة" : "مغلقة"}</span></div></div>
         <div class="detail-item"><div class="di-label">التاريخ</div><div class="di-value" style="font-size:12px">${fmtDate(t.created_at)}</div></div>
       </div>
@@ -761,7 +762,7 @@ async function openUserDetail(id) {
   try {
     const { user, orders, transactions } = await api(`users?detail=${id}`);
     const ordersRows = orders.length
-      ? orders.slice(0, 10).map(o => `<tr><td>#${o.id}</td><td>${esc(o.product_name || "-")}</td><td>${money(o.total)}</td><td><span class="badge ${STATUS_BADGE[o.status] || "badge-blue"}">${STATUS_LABELS[o.status] || o.status}</span></td><td>${fmtDate(o.created_at)}</td></tr>`).join("")
+      ? orders.slice(0, 10).map(o => `<tr><td>${orderCode(o.id)}</td><td>${esc(o.product_name || "-")}</td><td>${money(o.total)}</td><td><span class="badge ${STATUS_BADGE[o.status] || "badge-blue"}">${STATUS_LABELS[o.status] || o.status}</span></td><td>${fmtDate(o.created_at)}</td></tr>`).join("")
       : `<tr><td colspan="5" class="muted">لا توجد طلبات.</td></tr>`;
     const txRows = transactions.length
       ? transactions.slice(0, 10).map(t => `<tr><td>${esc(t.type)}</td><td style="color:${Number(t.amount) < 0 ? "var(--danger)" : "var(--success)"}">${Number(t.amount) > 0 ? "+" : ""}${money(t.amount)}</td><td>${esc(t.description || "-")}</td><td>${fmtDate(t.created_at)}</td></tr>`).join("")
@@ -802,7 +803,7 @@ async function loadOrders() {
     const { orders } = await api(`orders${params.toString() ? "?" + params.toString() : ""}`);
     if (!orders.length) { tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">لا توجد طلبات.</div></td></tr>`; return; }
     tbody.innerHTML = orders.map(o => `<tr class="clickable" data-id="${o.id}">
-      <td>#${o.id}</td>
+      <td><code>${orderCode(o.id)}</code></td>
       <td>${o.telegram_id}</td>
       <td>${esc(o.product_name || "-")}</td>
       <td>${o.quantity}</td>
@@ -835,7 +836,7 @@ document.querySelector("#ordersTable tbody").addEventListener("click", async e =
 });
 
 function openDeliverModal(id) {
-  openModal(`تسليم الطلب #${id}`, `
+  openModal(`تسليم الطلب ${orderCode(id)}`, `
     <label>المحتوى المُسلَّم للعميل (حساب/كود...)</label>
     <textarea id="dv_content" placeholder="user:pass"></textarea>
     <div class="modal-actions">
@@ -857,7 +858,7 @@ function openDeliverModal(id) {
 }
 
 async function openOrderDetail(id) {
-  openModal(`تفاصيل الطلب #${id}`, `<div class="empty-state">جارِ التحميل...</div>`);
+  openModal(`تفاصيل الطلب ${orderCode(id)}`, `<div class="empty-state">جارِ التحميل...</div>`);
   try {
     const { order: o } = await api(`orders?detail=${id}`);
     modalBody.innerHTML = `

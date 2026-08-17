@@ -23,9 +23,9 @@ module.exports = requireAuth(async (req, res) => {
     const { error } = await supabase.from("stock_manual").insert(rows);
     if (error) return res.status(500).json({ error: error.message });
 
-    const { data: product } = await supabase.from("products_manual").select("name, emoji").eq("id", product_id).maybeSingle();
+    const { data: product } = await supabase.from("products_manual").select("name, emoji, price").eq("id", product_id).maybeSingle();
     let broadcast = null;
-    if (notify !== false && product) broadcast = await announceStock(supabase, product.name, product.emoji);
+    if (notify !== false && product) broadcast = await announceStock(supabase, product);
     logActivity(supabase, "stock_add", `إضافة ${rows.length} وحدة مخزون لـ ${(product && product.name) || `#${product_id}`}`, { product_id, added: rows.length });
 
     return res.status(200).json({ ok: true, added: rows.length, broadcast });

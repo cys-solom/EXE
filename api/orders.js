@@ -5,6 +5,8 @@ const { sendTelegramMessage, notifyAdmin } = require("./_lib/telegram.js");
 const { logActivity } = require("./_lib/activity.js");
 const { toCsv, sendCsv } = require("./_lib/csv.js");
 
+function orderCode(id) { return `EXE-${String(id).padStart(6, "0")}`; }
+
 module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
 
@@ -29,7 +31,7 @@ module.exports = requireAuth(async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     if (req.query.format === "csv") {
       const csv = toCsv(data || [], [
-        { label: "ID", value: "id" }, { label: "Cliente", value: "telegram_id" },
+        { label: "ID", value: "id" }, { label: "Codigo", value: r => orderCode(r.id) }, { label: "Cliente", value: "telegram_id" },
         { label: "Producto", value: "product_name" }, { label: "Cantidad", value: "quantity" },
         { label: "Total", value: "total" }, { label: "Metodo de pago", value: "payment_method" },
         { label: "Estado", value: "status" }, { label: "Fecha", value: "created_at" }
@@ -62,8 +64,8 @@ module.exports = requireAuth(async (req, res) => {
       if (e2) return res.status(500).json({ error: e2.message });
 
       const text = isAr
-        ? `✅ <b>تم تسليم طلبك!</b>\n\n📦 ${order.product_name}\n🧾 الطلب #${order.id}\n💰 ${Number(order.total || 0).toFixed(2)} USDT\n\n${body}`
-        : `✅ <b>Your order has been delivered!</b>\n\n📦 ${order.product_name}\n🧾 Order #${order.id}\n💰 ${Number(order.total || 0).toFixed(2)} USDT\n\n${body}`;
+        ? `✅ <b>تم تسليم طلبك!</b>\n\n📦 ${order.product_name}\n🧾 الطلب <code>${orderCode(order.id)}</code>\n💰 ${Number(order.total || 0).toFixed(2)} USDT\n\n${body}`
+        : `✅ <b>Your order has been delivered!</b>\n\n📦 ${order.product_name}\n🧾 Order <code>${orderCode(order.id)}</code>\n💰 ${Number(order.total || 0).toFixed(2)} USDT\n\n${body}`;
       const tgRes = await sendTelegramMessage(order.telegram_id, text);
       notifyAdmin(`✅ <b>ENTREGA MANUAL (panel admin)</b>\n\n📦 ${order.product_name} x${order.quantity}\n🧾 #${order.id}\n👤 ${order.telegram_id}`).catch(() => {});
       logActivity(supabase, "order_deliver", `تسليم الطلب #${order.id} (${order.product_name}) للعميل #${order.telegram_id}`, { id: order.id });
@@ -77,8 +79,8 @@ module.exports = requireAuth(async (req, res) => {
       const { data: userRow } = await supabase.from("users").select("language").eq("id", order.telegram_id).maybeSingle();
       const isAr = !userRow || userRow.language !== "en";
       const text = isAr
-        ? `❌ <b>تم إلغاء طلبك</b>\n\n📦 ${order.product_name}\n🧾 الطلب #${order.id}\n\nتواصل مع الدعم لو عندك أي استفسار.`
-        : `❌ <b>Your order has been cancelled</b>\n\n📦 ${order.product_name}\n🧾 Order #${order.id}\n\nContact support if you have any questions.`;
+        ? `❌ <b>تم إلغاء طلبك</b>\n\n📦 ${order.product_name}\n🧾 الطلب <code>${orderCode(order.id)}</code>\n\nتواصل مع الدعم لو عندك أي استفسار.`
+        : `❌ <b>Your order has been cancelled</b>\n\n📦 ${order.product_name}\n🧾 Order <code>${orderCode(order.id)}</code>\n\nContact support if you have any questions.`;
       const tgRes = await sendTelegramMessage(order.telegram_id, text);
       notifyAdmin(`❌ <b>ORDEN CANCELADA (panel admin)</b>\n\n📦 ${order.product_name} x${order.quantity}\n🧾 #${order.id}\n👤 ${order.telegram_id}`).catch(() => {});
       logActivity(supabase, "order_cancel", `إلغاء الطلب #${order.id} (${order.product_name})`, { id: order.id });

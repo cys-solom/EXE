@@ -1,5 +1,6 @@
 // Envia un mensaje al cliente por Telegram (usado al entregar una orden manual desde el panel).
-async function sendTelegramMessage(chatId, text) {
+// opts.reply_markup permite adjuntar botones inline (ej. un boton "Ir a la tienda").
+async function sendTelegramMessage(chatId, text, opts = {}) {
   const token = process.env.BOT_TOKEN;
   if (!token) return { ok: false, error: "BOT_TOKEN no configurado" };
   try {
@@ -10,7 +11,8 @@ async function sendTelegramMessage(chatId, text) {
         chat_id: chatId,
         text,
         parse_mode: "HTML",
-        disable_web_page_preview: true
+        disable_web_page_preview: true,
+        ...(opts.reply_markup ? { reply_markup: opts.reply_markup } : {})
       })
     });
     const json = await res.json().catch(() => ({}));
@@ -30,11 +32,11 @@ async function notifyAdmin(text) {
 
 // Envia el mismo texto a una lista de chat ids, con una pequeña pausa entre cada uno
 // para no pasarnos del limite de Telegram (~30 msj/seg). Devuelve cuantos se enviaron bien.
-async function broadcastMessage(chatIds, text) {
+async function broadcastMessage(chatIds, text, opts = {}) {
   let sent = 0;
   const failed = [];
   for (const id of chatIds) {
-    const r = await sendTelegramMessage(id, text);
+    const r = await sendTelegramMessage(id, text, opts);
     if (r.ok) sent++;
     else failed.push({ id, error: r.error });
     await new Promise(resolve => setTimeout(resolve, 40));
