@@ -589,6 +589,8 @@ function manualProductForm(p = {}) {
     ${isNew ? `
     <label>أكواد/حسابات المخزون (سطر لكل وحدة — اختياري، تقدر تضيفها بعدين من زرار "المخزون")</label>
     <textarea id="mf_stock" placeholder="user1:pass1&#10;user2:pass2"></textarea>
+    <label class="upload-txt-label" for="mf_stock_file">${ic("download", "icon icon-sm")} أو ارفع ملف TXT (سطر لكل وحدة)</label>
+    <input type="file" id="mf_stock_file" accept=".txt,text/plain">
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
       <input type="checkbox" id="mf_notify" checked style="width:auto"> إشعار كل العملاء بتوفر المنتج (لو فيه مخزون)
     </label>` : ""}
@@ -599,9 +601,33 @@ function manualProductForm(p = {}) {
   `;
 }
 
+// يقرأ ملف TXT ويحط محتواه (سطر لكل وحدة) في الـ textarea المحددة، بإضافة السطور
+// لأي محتوى موجود بالفعل بدل ما يمسحه، عشان يقدر يضيف أكتر من ملف مع بعض.
+function bindTxtUpload(fileInputId, textareaId) {
+  const fileInput = document.getElementById(fileInputId);
+  if (!fileInput) return;
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const textarea = document.getElementById(textareaId);
+      const existing = textarea.value.trim();
+      const incoming = String(reader.result || "").trim();
+      textarea.value = existing ? `${existing}\n${incoming}` : incoming;
+      const lines = incoming.split(/\r?\n/).filter(l => l.trim()).length;
+      toast(`تم استيراد ${lines} سطر من الملف ✅`);
+      fileInput.value = "";
+    };
+    reader.onerror = () => toast("تعذر قراءة الملف", "error");
+    reader.readAsText(file, "utf-8");
+  });
+}
+
 document.getElementById("addManualBtn").addEventListener("click", () => {
   openModal("منتج يدوي جديد", manualProductForm());
   bindManualForm(null);
+  bindTxtUpload("mf_stock_file", "mf_stock");
 });
 
 document.getElementById("manualGrid").addEventListener("click", async e => {
@@ -663,6 +689,8 @@ async function openStockModal(productId) {
   openModal("إدارة المخزون", `<div id="stockList" class="stock-list">جارِ التحميل...</div>
     <label>إضافة أكواد جديدة (سطر لكل كود)</label>
     <textarea id="stockNewLines" placeholder="user1:pass1&#10;user2:pass2"></textarea>
+    <label class="upload-txt-label" for="stock_file">${ic("download", "icon icon-sm")} أو ارفع ملف TXT (سطر لكل وحدة)</label>
+    <input type="file" id="stock_file" accept=".txt,text/plain">
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
       <input type="checkbox" id="stockNotify" checked style="width:auto"> إشعار كل العملاء بتوفر مخزون جديد
     </label>
@@ -670,6 +698,7 @@ async function openStockModal(productId) {
       <button class="btn" id="stock_cancel">إغلاق</button>
       <button class="btn btn-primary" id="stock_add">إضافة</button>
     </div>`);
+  bindTxtUpload("stock_file", "stockNewLines");
   document.getElementById("stock_cancel").addEventListener("click", closeModal);
   document.getElementById("stock_add").addEventListener("click", async () => {
     const lines = document.getElementById("stockNewLines").value;
