@@ -530,7 +530,13 @@ async function editOrSend(chatId, messageId, text, keyboard) {
   const opts = { parse_mode: "HTML", disable_web_page_preview: true, reply_markup: { inline_keyboard: keyboard } };
   if (messageId) {
     try { return await bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...opts }); }
-    catch (e) { /* enviar nuevo */ }
+    catch (e) {
+      // Telegram tira este error cuando el contenido es IDENTICO al que ya esta en pantalla
+      // (ej. dar "actualizar" sin que haya cambiado nada) — no es un fallo real, no hay que
+      // mandar un mensaje nuevo, la tarjeta ya esta al dia tal cual.
+      if (/message is not modified/i.test(e.message || "")) return null;
+      /* fallo real (mensaje borrado, etc.): enviar nuevo */
+    }
   }
   return bot.sendMessage(chatId, text, opts);
 }
