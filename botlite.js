@@ -404,6 +404,7 @@ async function entregaManualPaso(chatId, texto) {
       delete global.entregaSessions[chatId];
       return bot.sendMessage(chatId, `❌ No pude enviarle el mensaje al cliente <code>${clienteId}</code>.\n\n${htmlEscape(e.message)}\n\nPuede que haya bloqueado el bot.`, { parse_mode: "HTML" });
     }
+    await sendDeliveryFile(clienteId, order.id, contenido);
 
     // Boton de recompra, igual que en la entrega normal
     try {
@@ -1206,6 +1207,22 @@ async function showApiTokensCategory(chatId, messageId = null) {
   return editOrSend(chatId, messageId, `${tg("🔑", ICON("CLAUDE"))} <b>API Tokens Claude Y Codex</b>\n\n${t.chooseProduct}`, kb);
 }
 
+// Boton "comprar" de un aviso de stock nuevo (broadcast): carga el catalogo
+// fresco (no depende de una sesion previa) y salta directo a ese producto.
+async function goToProductFromBroadcast(chatId, messageId, key) {
+  const [kind, rawId] = key.split(/_(.+)/); // "manual_5" -> ["manual", "5"]
+  const products = await loadProducts(chatId);
+  const index = products.findIndex(p =>
+    kind === "manual" ? (p.kind === "manual" && String(p.manualId) === String(rawId))
+      : (p.kind === "kokoro" && String(p.id) === String(rawId))
+  );
+  if (index === -1) {
+    const lang = await getUserLanguage(chatId); const t = L(lang);
+    return editOrSend(chatId, messageId, `${tg("😕", ICON("ATENTION"))} ${t.noProducts}`, [[styledButton(t.shop, "shop", "success", ICON("CART"))]]);
+  }
+  return showDescription(chatId, messageId, index);
+}
+
 // ============================================================
 //  Pantalla: Descripcion del producto (image 3)
 // ============================================================
@@ -1325,6 +1342,18 @@ async function showPaymentMethods(chatId, messageId, index, qty) {
 const ORDER_CODE_PREFIX = "EXE";
 function orderCode(id) {
   return `${ORDER_CODE_PREFIX}-${String(id).padStart(6, "0")}`;
+}
+
+// Manda el contenido entregado tambien como archivo .txt adjunto (ademas del
+// mensaje de texto), para pedidos con varias cuentas/codigos donde un archivo
+// es mas comodo de guardar/copiar que un mensaje largo.
+async function sendDeliveryFile(chatId, orderId, content) {
+  try {
+    const buffer = Buffer.from(String(content), "utf-8");
+    await bot.sendDocument(chatId, buffer, {}, { filename: `${orderCode(orderId)}.txt`, contentType: "text/plain" });
+  } catch (e) {
+    console.error("[DELIVERY FILE]", e.message);
+  }
 }
 
 // ============================================================
@@ -1641,6 +1670,7 @@ async function finishDelivery(chatId, messageId, t, order, p, qty, total, delive
     const text = buildDeliveryText(t, { id: order?.id || "-", product_name: p.name, total, quantity: qty }, String(delivery.content), remainingBalance);
     try { await bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: "HTML" }); }
     catch (e) { await bot.sendMessage(chatId, text, { parse_mode: "HTML" }); }
+    if (order?.id) await sendDeliveryFile(chatId, order.id, delivery.content);
     await sendAdminLog(`✅ COMPRA CONFIRMADA\n\n👤 @${getUsername(chatId)}\n🆔 ${chatId}\n📦 ${p.name}\n🔢 ${qty}\n💰 ${money(total)} USDT\n🧾 #${order?.id || "-"}`);
     await sendReorderButton(chatId, t, { product_id: (order?.product_id || p.id), product_name: p.name, quantity: qty }, qty > 0 ? total / qty : total);
     return;
@@ -2082,6 +2112,7 @@ bot.on("callback_query", async query => {
     if (data === "where_order_id") { const t = L(await getUserLanguage(chatId)); return bot.answerCallbackQuery(query.id, { text: t.whereOrderIdHelp, show_alert: true }).catch(() => {}); }
 
     if (data.startsWith("desc_")) return showDescription(chatId, messageId, parseInt(data.split("_")[1]));
+    if (data.startsWith("buyprod_")) return goToProductFromBroadcast(chatId, messageId, data.replace("buyprod_", ""));
     if (data.startsWith("qty_")) { const [, i, q] = data.split("_"); return showQuantity(chatId, messageId, parseInt(i), parseInt(q)); }
     if (data.startsWith("paymethods_")) { const [, i, q] = data.split("_"); return showPaymentMethods(chatId, messageId, parseInt(i), parseInt(q)); }
     if (data.startsWith("paybinance_")) { const [, i, q] = data.split("_"); return showBinancePayment(chatId, messageId, parseInt(i), parseInt(q)); }

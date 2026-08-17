@@ -1,7 +1,7 @@
 // Lista/filtra ordenes y permite entregar manualmente o cancelar desde el panel.
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
-const { sendTelegramMessage, notifyAdmin } = require("./_lib/telegram.js");
+const { sendTelegramMessage, sendTelegramDocument, notifyAdmin } = require("./_lib/telegram.js");
 const { logActivity } = require("./_lib/activity.js");
 const { toCsv, sendCsv } = require("./_lib/csv.js");
 
@@ -67,6 +67,7 @@ module.exports = requireAuth(async (req, res) => {
         ? `✅ <b>تم تسليم طلبك!</b>\n\n📦 ${order.product_name}\n🧾 الطلب <code>${orderCode(order.id)}</code>\n💰 ${Number(order.total || 0).toFixed(2)} USDT\n\n${body}`
         : `✅ <b>Your order has been delivered!</b>\n\n📦 ${order.product_name}\n🧾 Order <code>${orderCode(order.id)}</code>\n💰 ${Number(order.total || 0).toFixed(2)} USDT\n\n${body}`;
       const tgRes = await sendTelegramMessage(order.telegram_id, text);
+      sendTelegramDocument(order.telegram_id, `${orderCode(order.id)}.txt`, body).catch(() => {});
       notifyAdmin(`✅ <b>ENTREGA MANUAL (panel admin)</b>\n\n📦 ${order.product_name} x${order.quantity}\n🧾 #${order.id}\n👤 ${order.telegram_id}`).catch(() => {});
       logActivity(supabase, "order_deliver", `تسليم الطلب #${order.id} (${order.product_name}) للعميل #${order.telegram_id}`, { id: order.id });
       return res.status(200).json({ ok: true, notified: tgRes.ok, notifyError: tgRes.error || null });

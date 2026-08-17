@@ -23,6 +23,23 @@ async function sendTelegramMessage(chatId, text, opts = {}) {
   }
 }
 
+// Envia el contenido entregado tambien como archivo .txt adjunto (ademas del mensaje de texto).
+async function sendTelegramDocument(chatId, filename, content) {
+  const token = process.env.BOT_TOKEN;
+  if (!token) return { ok: false, error: "BOT_TOKEN no configurado" };
+  try {
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("document", new Blob([String(content)], { type: "text/plain" }), filename);
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: "POST", body: form });
+    const json = await res.json().catch(() => ({}));
+    if (!json.ok) return { ok: false, error: json.description || `HTTP ${res.status}` };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 // Notifica al grupo de logs del admin (mismo grupo que usa el bot: ADMIN_LOG_GROUP).
 async function notifyAdmin(text) {
   const group = process.env.ADMIN_LOG_GROUP;
@@ -44,4 +61,4 @@ async function broadcastMessage(chatIds, text, opts = {}) {
   return { sent, failed };
 }
 
-module.exports = { sendTelegramMessage, notifyAdmin, broadcastMessage };
+module.exports = { sendTelegramMessage, sendTelegramDocument, notifyAdmin, broadcastMessage };

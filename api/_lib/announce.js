@@ -10,8 +10,11 @@ async function announceStock(supabase, product) {
   const icon = product.emoji || "📦";
   const priceLine = product.price != null ? `\n💵 السعر: من <b>${Number(product.price).toFixed(2)} USDT</b>` : "";
   const priceLineEn = product.price != null ? `\n💵 Price: from <b>${Number(product.price).toFixed(2)} USDT</b>` : "";
-  const shopBtn = { inline_keyboard: [[{ text: "🛍 افتح المتجر", callback_data: "shop" }]] };
-  const shopBtnEn = { inline_keyboard: [[{ text: "🛍 Open Shop", callback_data: "shop" }]] };
+  // "style: success" = verde, mismo esquema de colores que usa el bot en sus botones (styledButton).
+  // callback_data manda al cliente directo a ESTE producto (no al catalogo general).
+  const buyCbData = `buyprod_manual_${product.id}`;
+  const shopBtn = { inline_keyboard: [[{ text: "🛒 اشتري الآن", callback_data: buyCbData, style: "success" }]] };
+  const shopBtnEn = { inline_keyboard: [[{ text: "🛒 Buy Now", callback_data: buyCbData, style: "success" }]] };
 
   const textAr = `🔥 <b>مخزون جديد!</b>\n\n${icon} <b>${product.name}</b>${priceLine}\n\n✅ متوفر الآن في المتجر`;
   const textEn = `🔥 <b>New Stock!</b>\n\n${icon} <b>${product.name}</b>${priceLineEn}\n\n✅ Available now in the store`;
