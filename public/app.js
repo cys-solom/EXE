@@ -108,7 +108,7 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
 const TAB_TITLES = {
   dashboard: "لوحة التحكم", activity: "سجل النشاط", broadcast: "بث رسالة", products: "منتجات KOKORO",
   manual: "منتجاتي اليدوية", users: "المستخدمين", orders: "الطلبات", transactions: "المعاملات",
-  activation: "التفعيل بالبريد", tickets: "الشكاوى"
+  activation: "التفعيل بالبريد", tickets: "الشكاوى", providers: "مزوّدي API"
 };
 let currentTab = "dashboard";
 
@@ -130,7 +130,8 @@ document.getElementById("refreshBtn").addEventListener("click", () => loadTab(cu
 function loadTab(tab) {
   const loaders = {
     dashboard: loadDashboard, activity: loadActivity, broadcast: () => {}, products: loadProducts, manual: loadManual,
-    users: loadUsers, orders: loadOrders, transactions: loadTransactions, activation: loadActivation, tickets: loadTickets
+    users: loadUsers, orders: loadOrders, transactions: loadTransactions, activation: loadActivation, tickets: loadTickets,
+    providers: loadProviders
   };
   (loaders[tab] || (() => {}))();
 }
@@ -206,6 +207,94 @@ async function openTicketDetail(id) {
   } catch (e) { modalBody.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
 }
 
+// ---------- API Providers ----------
+async function loadProviders() {
+  const grid = document.getElementById("providersGrid");
+  grid.innerHTML = Array.from({ length: 2 }).map(() => `<div class="product-card"><span class="skel" style="width:70%"></span><span class="skel" style="height:22px;margin-top:8px"></span></div>`).join("");
+  try {
+    const { providers } = await api("providers");
+    if (!providers.length) { grid.innerHTML = `<div class="empty-state">لا يوجد مزوّدين بعد.</div>`; return; }
+    grid.innerHTML = providers.map(p => `<div class="product-card" data-id="${p.id}">
+      <div class="pc-head">
+        <div class="pc-title">${ic("bank", "icon icon-sm")} ${esc(p.name)}${p.is_default ? ` <span class="badge badge-blue">افتراضي</span>` : ""}</div>
+        <span class="badge ${p.active ? "badge-green" : "badge-red"}">${p.active ? "مفعّل" : "معطّل"}</span>
+      </div>
+      <div class="pc-price" style="font-size:15px">${p.balance != null ? money(p.balance) + " USDT" : (p.balanceError ? `<span style="font-size:12px;color:var(--danger)">${esc(p.balanceError)}</span>` : "—")}</div>
+      <div class="pc-meta">
+        <span>${esc(p.base_url)}</span>
+      </div>
+      <div class="pc-meta"><span>مفتاح: ${esc(p.api_key_masked)}</span></div>
+      <div class="pc-actions">
+        <button class="btn btn-sm" data-action="toggle">${p.active ? "تعطيل" : "تفعيل"}</button>
+        <button class="btn btn-sm" data-action="edit">${ic("edit", "icon icon-sm")} تعديل</button>
+        ${!p.is_default ? `<button class="btn btn-sm btn-danger" data-action="delete">${ic("trash", "icon icon-sm")}</button>` : ""}
+      </div>
+    </div>`).join("");
+  } catch (e) { grid.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
+}
+
+function providerForm(p = {}) {
+  return `
+    <label>اسم المزوّد (داخلي، للتمييز بس)</label><input id="pf_name" value="${esc(p.name || "")}" placeholder="مثال: مزوّد ثاني">
+    <label>Base URL</label><input id="pf_url" value="${esc(p.base_url || "")}" placeholder="https://api.example.com">
+    <label>API Key ${p.id ? "(اسيبها فاضية لو مش هتغيّرها)" : ""}</label><input id="pf_key" type="password" placeholder="${p.id ? "••••••••" : ""}">
+    <div class="modal-actions">
+      <button class="btn" id="pf_cancel">إلغاء</button>
+      <button class="btn btn-primary" id="pf_save">حفظ</button>
+    </div>
+  `;
+}
+
+document.getElementById("addProviderBtn").addEventListener("click", () => {
+  openModal("مزوّد API جديد", providerForm());
+  bindProviderForm(null);
+});
+
+document.getElementById("providersGrid").addEventListener("click", async e => {
+  const card = e.target.closest(".product-card");
+  if (!card) return;
+  const id = card.dataset.id;
+  const action = e.target.dataset.action;
+  if (action === "delete") {
+    if (!confirm("تأكيد حذف هذا المزوّد؟ منتجاته هتوقف عن الظهور في المتجر.")) return;
+    try { await api(`providers?id=${id}`, { method: "DELETE" }); toast("تم الحذف ✅"); loadProviders(); }
+    catch (err) { toast(err.message, "error"); }
+    return;
+  }
+  if (action === "toggle") {
+    const { providers } = await api("providers");
+    const p = providers.find(x => String(x.id) === String(id));
+    try { await api("providers", { method: "PATCH", body: { id, active: !p.active } }); toast("تم التحديث ✅"); loadProviders(); }
+    catch (err) { toast(err.message, "error"); }
+    return;
+  }
+  if (action === "edit") {
+    const { providers } = await api("providers");
+    const p = providers.find(x => String(x.id) === String(id));
+    openModal("تعديل المزوّد", providerForm(p));
+    bindProviderForm(id);
+  }
+});
+
+function bindProviderForm(id) {
+  document.getElementById("pf_cancel").addEventListener("click", closeModal);
+  document.getElementById("pf_save").addEventListener("click", async () => {
+    const name = document.getElementById("pf_name").value.trim();
+    const base_url = document.getElementById("pf_url").value.trim();
+    const api_key = document.getElementById("pf_key").value.trim();
+    if (!name || !base_url || (!id && !api_key)) { toast("الاسم والرابط والمفتاح مطلوبين", "error"); return; }
+    const body = { name, base_url };
+    if (api_key) body.api_key = api_key;
+    try {
+      if (id) await api("providers", { method: "PATCH", body: { id, ...body } });
+      else await api("providers", { method: "POST", body });
+      toast("تم الحفظ ✅");
+      closeModal();
+      loadProviders();
+    } catch (err) { toast(err.message, "error"); }
+  });
+}
+
 // ---------- Dashboard ----------
 async function loadDashboard() {
   const grid = document.getElementById("dashboardStats");
@@ -224,6 +313,14 @@ async function loadDashboard() {
     renderStatusBreakdown(d.statusCounts || {});
     renderMiniList("topProducts", (d.topProducts || []).map(p => ({ label: p.name, value: `${money(p.total)}$` })), "لا توجد مبيعات بعد.");
     renderMiniList("topCustomers", (d.topCustomers || []).map(c => ({ label: c.username ? "@" + c.username : `#${c.id}`, value: `${money(c.total)}$` })), "لا توجد مبيعات بعد.");
+
+    const pb = document.getElementById("providerBalancesCard");
+    if ((d.providerBalances || []).length > 1) {
+      pb.classList.remove("hidden");
+      renderMiniList("providerBalancesList", d.providerBalances.map(p => ({ label: p.name, value: p.balance != null ? `${money(p.balance)}$` : "—" })), "لا يوجد مزوّدين.");
+    } else {
+      pb.classList.add("hidden");
+    }
   } catch (e) { grid.innerHTML = `<div class="stat-card"><div class="label">خطأ</div><div class="value" style="font-size:14px">${esc(e.message)}</div></div>`; }
 }
 

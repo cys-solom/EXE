@@ -1,6 +1,7 @@
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
 const { fetchKokoroBalance } = require("../services/kokoroApi.js");
+const { getActiveProviders } = require("../services/sync.js");
 
 const CHART_DAYS = 14;
 const LOW_BALANCE_THRESHOLD = 10; // USDT — debajo de esto se marca como "bajo" en el dashboard
@@ -18,7 +19,7 @@ module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
   const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
 
-  const [usersRes, ordersRes, deliveredRes, productsRes, pendingRes, statusCounts, kokoro] = await Promise.all([
+  const [usersRes, ordersRes, deliveredRes, productsRes, pendingRes, statusCounts, providers] = await Promise.all([
     supabase.from("users").select("*", { count: "exact", head: true }),
     supabase.from("orders").select("*", { count: "exact", head: true }),
     supabase.from("orders").select("total, product_name, telegram_id, created_at").eq("status", "delivered").gte("created_at", since),
@@ -27,8 +28,13 @@ module.exports = requireAuth(async (req, res) => {
     Promise.all(["processing", "paid", "delivered", "cancelled"].map(s =>
       supabase.from("orders").select("*", { count: "exact", head: true }).eq("status", s).then(r => [s, r.count || 0])
     )),
-    fetchKokoroBalance()
+    getActiveProviders(supabase)
   ]);
+
+  const providerBalances = await Promise.all(providers.map(async p => {
+    const bal = await fetchKokoroBalance(p);
+    return { name: p.name, balance: bal.success ? bal.balance : null, error: bal.success ? null : bal.error };
+  }));
 
   const delivered = deliveredRes.data || [];
   const revenue = delivered.reduce((sum, r) => sum + Number(r.total || 0), 0);
@@ -74,7 +80,10 @@ module.exports = requireAuth(async (req, res) => {
     }));
   }
 
-  const kokoroBalance = kokoro.success ? kokoro.balance : null;
+  const knownBalances = providerBalances.filter(p => p.balance != null);
+  const kokoroBalance = knownBalances.length ? knownBalances.reduce((s, p) => s + p.balance, 0) : null;
+  const kokoroLow = knownBalances.some(p => p.balance < LOW_BALANCE_THRESHOLD);
+  const kokoroError = providerBalances.length === 1 && providerBalances[0].error ? providerBalances[0].error : null;
 
   return res.status(200).json({
     usersCount: usersRes.count || 0,
@@ -83,8 +92,9 @@ module.exports = requireAuth(async (req, res) => {
     activeProducts: productsRes.count || 0,
     pendingDeliveries: pendingRes.count || 0,
     kokoroBalance,
-    kokoroLow: kokoroBalance != null && kokoroBalance < LOW_BALANCE_THRESHOLD,
-    kokoroError: kokoro.success ? null : kokoro.error,
+    kokoroLow,
+    kokoroError,
+    providerBalances,
     statusCounts: Object.fromEntries(statusCounts),
     chart,
     topProducts,

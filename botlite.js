@@ -19,9 +19,9 @@ if (typeof globalThis.WebSocket === "undefined") {
 const TelegramBot = require("node-telegram-bot-api");
 const { createClient } = require("@supabase/supabase-js");
 
-const { fetchKokoroBalance, purchaseKokoro } = require("./services/kokoroApi.js");
+const { fetchKokoroBalance, purchaseKokoro, defaultProviderFromEnv } = require("./services/kokoroApi.js");
 const { productIcon, productTextEmoji } = require("./services/emojis.js");
-const { startProductSync } = require("./services/sync.js");
+const { startProductSync, getActiveProviders } = require("./services/sync.js");
 const payments = require("./services/payments.js");
 
 const REQUIRED = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "KOKORO_API_KEY"];
@@ -859,7 +859,7 @@ async function getShopProducts() {
       kind: "kokoro", id: String(p.id), name: (p.custom_name && p.custom_name.trim()) || p.name, price: finalPrice(p),
       stock: Number(p.stock || 0), min_order: Number(p.min_order || 1), emoji: p.emoji,
       description_es: p.description_es, description_en: p.description_en,
-      bulk_discounts: tiers
+      bulk_discounts: tiers, providerId: p.provider_id, nativeId: p.native_id || String(p.id)
     });
   });
   const { data: manProds } = await supabase.from("products_manual").select("*").eq("enabled", true).order("name");
@@ -1361,11 +1361,22 @@ async function reorder(chatId) {
   return showQuantity(chatId, null, idx, qty);
 }
 
-// Cumplir la entrega (kokoro API o stock manual)
+// Busca el proveedor de un producto (por id de products.provider_id). Si no tiene
+// (datos viejos antes del multi-proveedor), cae al proveedor default del .env.
+async function resolveProvider(providerId) {
+  if (providerId) {
+    const { data } = await supabase.from("api_providers").select("*").eq("id", providerId).maybeSingle();
+    if (data) return data;
+  }
+  return defaultProviderFromEnv();
+}
+
+// Cumplir la entrega (API del proveedor correspondiente, o stock manual)
 async function fulfillOrder(p, qty, chatId, orderId) {
   if (p.kind === "manual") return fulfillManual(p.manualId, qty, chatId, orderId);
-  const res = await purchaseKokoro(p.id, qty, `LITE-${orderId}`);
-  // res.orderId = número de orden del bot principal (KOKORO) para reclamar si algo pasa
+  const provider = await resolveProvider(p.providerId);
+  const res = await purchaseKokoro(provider, p.nativeId || p.id, qty, `LITE-${orderId}`);
+  // res.orderId = número de orden del proveedor (para reclamar si algo pasa)
   return res.success
     ? { success: true, content: res.credentials, kokoroOrderId: res.orderId || null }
     : { success: false, message: res.error || res.message || "Delivery failed" };
@@ -2159,7 +2170,15 @@ async function deliverDirectBep20Purchase(chatId, txid, orderIdFromPoller) {
 
   const products = sess(chatId).products || await loadProducts(chatId);
   let p = products[pp.index];
-  if (!p) p = { kind: order.source === "manual" ? "manual" : "kokoro", id: order.product_id, name: order.product_name, manualId: String(order.product_id).replace(/^m/, "") };
+  if (!p) {
+    p = { kind: order.source === "manual" ? "manual" : "kokoro", id: order.product_id, name: order.product_name, manualId: String(order.product_id).replace(/^m/, "") };
+    // Sesion perdida: recuperar provider_id/native_id reales desde la tabla products
+    // para no mandar el ID equivocado al proveedor equivocado si hay mas de uno activo.
+    if (p.kind === "kokoro") {
+      const { data: prow } = await supabase.from("products").select("provider_id, native_id").eq("id", order.product_id).maybeSingle();
+      if (prow) { p.providerId = prow.provider_id; p.nativeId = prow.native_id; }
+    }
+  }
 
   const checkingMsg = await bot.sendMessage(chatId, verifyingText(t, txid, 80, t.creditingWallet), { parse_mode: "HTML" });
   // Activacion manual: se pide el correo al cliente en vez de entregar.
@@ -2208,9 +2227,16 @@ payments.startBep20Poller(supabase, {
 });
 
 (async () => {
-  const bal = await fetchKokoroBalance();
-  if (bal.success) console.log(`[KOKORO] Saldo prepago: ${money(bal.balance)} USDT`);
-  else console.log(`[KOKORO] No se pudo leer el saldo: ${bal.error} (revisa KOKORO_API_KEY)`);
+  // Espera un momento a que termine la primera sincronizacion (crea el proveedor
+  // default si hace falta) antes de listar los proveedores activos.
+  await sleep(1500);
+  const providers = await getActiveProviders(supabase);
+  if (!providers.length) { console.log("[KOKORO] No hay proveedores de API activos configurados."); return; }
+  for (const provider of providers) {
+    const bal = await fetchKokoroBalance(provider);
+    if (bal.success) console.log(`[KOKORO] Saldo prepago (${provider.name}): ${money(bal.balance)} USDT`);
+    else console.log(`[KOKORO] No se pudo leer el saldo de "${provider.name}": ${bal.error}`);
+  }
 })();
 
 // Servidor HTTP minimo: solo para que Railway (u otro host) detecte un puerto

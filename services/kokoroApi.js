@@ -1,40 +1,51 @@
 // ============================================================
-//  Cliente de la API KOKORO (proveedor mayorista)
-//  El bot Lite consume estos endpoints con la API Key del revendedor.
-//  Docs: https://api.shopdigital.app/docs
+//  Cliente de API para proveedores mayoristas tipo KOKORO.
+//  Cada funcion recibe un "provider" ({ base_url, api_key }) para
+//  poder hablar con MAS DE UN proveedor a la vez.
+//  Docs del contrato: https://api.shopdigital.app/docs
 // ============================================================
 require("dotenv").config();
 
-const API_URL = (process.env.KOKORO_API_URL || "https://api.shopdigital.app").replace(/\/+$/, "");
-const API_KEY = process.env.KOKORO_API_KEY || "";
-
-function authHeaders() {
+// Proveedor "default": el que viene configurado por variables de entorno
+// (KOKORO_API_URL / KOKORO_API_KEY). Se usa como fallback y para crear
+// automaticamente la primera fila de api_providers.
+function defaultProviderFromEnv() {
   return {
-    "Authorization": `Bearer ${API_KEY}`,
+    name: "Default (.env)",
+    base_url: (process.env.KOKORO_API_URL || "https://api.shopdigital.app").replace(/\/+$/, ""),
+    api_key: process.env.KOKORO_API_KEY || ""
+  };
+}
+
+function authHeaders(provider) {
+  return {
+    "Authorization": `Bearer ${provider.api_key}`,
     "Content-Type": "application/json"
   };
 }
 
 // GET /api/products -> catalogo mayorista (precio, stock, min_order)
-async function fetchKokoroProducts() {
+async function fetchKokoroProducts(provider) {
+  const base = String(provider.base_url || "").replace(/\/+$/, "");
   try {
-    const res = await fetch(`${API_URL}/api/products`, { headers: authHeaders() });
+    const res = await fetch(`${base}/api/products`, { headers: authHeaders(provider) });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.success) {
-      console.error("[KOKORO API] products error:", res.status, json.error || "");
+      console.error(`[API ${provider.name || base}] products error:`, res.status, json.error || "");
       return { success: false, products: [], error: json.error || `HTTP ${res.status}` };
     }
     return { success: true, products: json.products || [] };
   } catch (err) {
-    console.error("[KOKORO API] products exception:", err.message);
+    console.error(`[API ${provider.name || base}] products exception:`, err.message);
     return { success: false, products: [], error: err.message };
   }
 }
 
-// GET /api/balance -> saldo prepago del revendedor con KOKORO
-async function fetchKokoroBalance() {
+// GET /api/balance -> saldo prepago del revendedor con este proveedor
+async function fetchKokoroBalance(provider) {
+  const base = String(provider.base_url || "").replace(/\/+$/, "");
   try {
-    const res = await fetch(`${API_URL}/api/balance`, { headers: authHeaders() });
+    const res = await fetch(`${base}/api/balance`, { headers: authHeaders(provider) });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.success) {
       return { success: false, balance: 0, error: json.error || `HTTP ${res.status}` };
@@ -47,11 +58,12 @@ async function fetchKokoroBalance() {
 
 // POST /api/purchase -> compra + entrega. Devuelve las credenciales entregadas.
 // externalOrderId da idempotencia: si se reintenta con el mismo id, no cobra doble.
-async function purchaseKokoro(productId, quantity, externalOrderId) {
+async function purchaseKokoro(provider, productId, quantity, externalOrderId) {
+  const base = String(provider.base_url || "").replace(/\/+$/, "");
   try {
-    const res = await fetch(`${API_URL}/api/purchase`, {
+    const res = await fetch(`${base}/api/purchase`, {
       method: "POST",
-      headers: authHeaders(),
+      headers: authHeaders(provider),
       body: JSON.stringify({
         product_id: String(productId),
         quantity: Number(quantity) || 1,
@@ -70,25 +82,25 @@ async function purchaseKokoro(productId, quantity, externalOrderId) {
       };
     }
 
-    // 202 = pago recibido pero entrega pendiente (revision manual del lado KOKORO)
+    // 202 = pago recibido pero entrega pendiente (revision manual del lado del proveedor)
     if (res.status === 202) {
       return { success: false, pending: true, orderId: json.order_id, message: json.message || "Pending fulfillment" };
     }
 
-    // 402 = saldo insuficiente del revendedor con KOKORO
+    // 402 = saldo insuficiente del revendedor con el proveedor
     if (res.status === 402) {
       return { success: false, insufficientProviderBalance: true, error: json.error || "Insufficient provider balance" };
     }
 
     return { success: false, error: json.error || `HTTP ${res.status}` };
   } catch (err) {
-    console.error("[KOKORO API] purchase exception:", err.message);
+    console.error(`[API ${provider.name || base}] purchase exception:`, err.message);
     return { success: false, error: err.message };
   }
 }
 
 module.exports = {
-  API_URL,
+  defaultProviderFromEnv,
   fetchKokoroProducts,
   fetchKokoroBalance,
   purchaseKokoro

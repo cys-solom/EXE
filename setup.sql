@@ -19,12 +19,33 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ALTER COLUMN language SET DEFAULT 'ar';
 
 -- ------------------------------------------------------------
--- 2) PRODUCTOS (se sincronizan desde la API de KOKORO cada 5 min)
+-- 2a) PROVEEDORES DE API (mayoristas tipo KOKORO)
+--     Podes tener mas de uno activo a la vez; el bot sincroniza
+--     productos de TODOS los proveedores activos.
+--     El primero se crea solo con los valores de KOKORO_API_URL /
+--     KOKORO_API_KEY del .env la primera vez que corre la sincronizacion.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS api_providers (
+  id            BIGSERIAL PRIMARY KEY,
+  name          TEXT NOT NULL,                    -- nombre interno (solo lo ves vos en el panel)
+  base_url      TEXT NOT NULL,
+  api_key       TEXT NOT NULL,
+  active        BOOLEAN DEFAULT true,
+  is_default    BOOLEAN DEFAULT false,             -- true = el proveedor creado desde el .env
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+-- Evita crear el proveedor default dos veces si dos procesos arrancan a la vez:
+CREATE UNIQUE INDEX IF NOT EXISTS api_providers_one_default ON api_providers ((is_default)) WHERE is_default = true;
+
+-- ------------------------------------------------------------
+-- 2) PRODUCTOS (se sincronizan desde los proveedores activos cada 5 min)
 --    El revendedor SOLO configura: markup, enabled y (opcional) emoji.
 --    El resto de columnas las actualiza el bot automaticamente.
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS products (
-  id            TEXT PRIMARY KEY,                 -- ID del producto en la API KOKORO
+  id            TEXT PRIMARY KEY,                 -- ID unico local (= id del proveedor default, o "p<provider_id>_<id>" para los demas)
+  provider_id   BIGINT REFERENCES api_providers(id) ON DELETE CASCADE,
+  native_id     TEXT,                              -- ID real del producto EN el proveedor (para comprar)
   name          TEXT NOT NULL,                    -- nombre (lo trae la API)
   price         NUMERIC(12,2) DEFAULT 0,          -- precio MAYORISTA (lo trae la API)
   stock         INT DEFAULT 0,                    -- stock (lo trae la API)
@@ -40,6 +61,9 @@ CREATE TABLE IF NOT EXISTS products (
   updated_at    TIMESTAMPTZ DEFAULT now()
 );
 
+-- Por si la tabla products ya existia sin las columnas multi-proveedor:
+ALTER TABLE products ADD COLUMN IF NOT EXISTS provider_id BIGINT REFERENCES api_providers(id) ON DELETE CASCADE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS native_id TEXT;
 -- Por si la tabla products ya existia sin la columna de nombre propio:
 ALTER TABLE products ADD COLUMN IF NOT EXISTS custom_name TEXT;
 -- Por si la tabla products ya existia sin el tipo de markup (% o monto fijo):

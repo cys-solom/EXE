@@ -73,6 +73,10 @@
       <button class="nav-item" data-tab="activation"><svg class="icon nav-ic"><use href="#ic-mail"/></svg> التفعيل بالبريد</button>
       <button class="nav-item" data-tab="tickets"><svg class="icon nav-ic"><use href="#ic-support"/></svg> الشكاوى</button>
     </nav>
+    <div class="nav-group-label">النظام</div>
+    <nav class="nav">
+      <button class="nav-item" data-tab="providers"><svg class="icon nav-ic"><use href="#ic-bank"/></svg> مزوّدي API</button>
+    </nav>
     <div class="nav-group-label">العملاء</div>
     <nav class="nav">
       <button class="nav-item" data-tab="users"><svg class="icon nav-ic"><use href="#ic-users"/></svg> المستخدمين</button>
@@ -111,6 +115,10 @@
         <div class="card">
           <h3><svg class="icon" style="stroke:var(--success)"><use href="#ic-gem"/></svg> أعلى العملاء إنفاقًا</h3>
           <div id="topCustomers" class="mini-list"></div>
+        </div>
+        <div id="providerBalancesCard" class="card hidden">
+          <h3><svg class="icon" style="stroke:var(--primary)"><use href="#ic-bank"/></svg> رصيد المزوّدين</h3>
+          <div id="providerBalancesList" class="mini-list"></div>
         </div>
       </div>
     </section>
@@ -204,6 +212,14 @@
       <div class="table-wrap"><table id="transactionsTable"><thead><tr>
         <th>العميل</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th>
       </tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="tab-providers" class="tab">
+      <p class="section-hint">مزوّدي المنتجات (تقدر تضيف أكتر من مزوّد مختلف، البوت بيزامن ويبيع منهم كلهم مع بعض).</p>
+      <div class="toolbar">
+        <button id="addProviderBtn" class="btn btn-primary"><svg class="icon"><use href="#ic-plus"/></svg> مزوّد جديد</button>
+      </div>
+      <div id="providersGrid" class="card-grid"></div>
     </section>
 
     <section id="tab-tickets" class="tab">
