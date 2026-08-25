@@ -90,7 +90,7 @@ const CHANNEL_CHECK_TIMEOUT_MS = Number(process.env.CHANNEL_CHECK_TIMEOUT_MS || 
 const START_DB_TIMEOUT_MS = Number(process.env.START_DB_TIMEOUT_MS || 500);
 const SHOP_LOADING = process.env.SHOP_LOADING !== "false";
 const SHOP_LOADING_MIN_MS = Number(process.env.SHOP_LOADING_MIN_MS || 1600);
-const SHOP_LOADING_FRAME_MS = Number(process.env.SHOP_LOADING_FRAME_MS || 280);
+const SHOP_LIGHTNING_EFFECT_ID = process.env.SHOP_LIGHTNING_EFFECT_ID || "5123236135417415011";
 
 async function withTimeout(promise, ms, fallback, label) {
   let timer = null;
@@ -1104,42 +1104,16 @@ async function showHome(chatId, messageId, knownProfile = null) {
 // Rayito animado de carga (mismo efecto que el bot principal): se muestra
 // mientras se cargan los productos y se borra al terminar.
 async function showLoadingSticker(chatId) {
+  const opts = { parse_mode: "HTML" };
+  if (SHOP_LIGHTNING_EFFECT_ID) opts.message_effect_id = String(SHOP_LIGHTNING_EFFECT_ID);
   try {
-    const res = await bot.sendMessage(chatId, tg("\u26A1", ICON("LIGHTNING")), { parse_mode: "HTML" });
+    const res = await bot.sendMessage(chatId, tg("\u26A1", ICON("LIGHTNING")), opts);
     return res.message_id;
   } catch (err) {
     try {
-      const res = await bot.sendMessage(chatId, "\u23F3", { parse_mode: "HTML" });
+      const res = await bot.sendMessage(chatId, tg("\u26A1", ICON("LIGHTNING")), { parse_mode: "HTML" });
       return res.message_id;
     } catch (e) { return null; }
-  }
-}
-
-async function runShopLoadingEffect(chatId, messageId) {
-  const bolt = tg("\u26A1", ICON("LIGHTNING"));
-  const frames = [
-    bolt,
-    `${bolt} ${bolt}`,
-    `${bolt} ${bolt} ${bolt}`,
-    `\u2728 ${bolt} \u2728`,
-    `${bolt}\n\u25CF \u25CB \u25CB`,
-    `${bolt}\n\u25CB \u25CF \u25CB`,
-    `${bolt}\n\u25CB \u25CB \u25CF`
-  ];
-  const started = Date.now();
-  let i = 0;
-  while (Date.now() - started < SHOP_LOADING_MIN_MS) {
-    try {
-      await bot.editMessageText(frames[i % frames.length], {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: "HTML"
-      });
-    } catch (e) {
-      if (!/message is not modified/i.test(e.message || "")) break;
-    }
-    i++;
-    await sleep(SHOP_LOADING_FRAME_MS);
   }
 }
 
@@ -1148,14 +1122,12 @@ async function showShop(chatId, messageId) {
   const t = L(lang);
   // Mostrar rayito de carga mientras se traen los productos
   const loadingStartedAt = Date.now();
-  const loadingPromise = SHOP_LOADING && !messageId ? showLoadingSticker(chatId) : Promise.resolve(null);
-  const loadingEffectPromise = SHOP_LOADING && messageId ? runShopLoadingEffect(chatId, messageId) : Promise.resolve();
+  const loadingPromise = SHOP_LOADING ? showLoadingSticker(chatId) : Promise.resolve(null);
   let products = await loadProducts(chatId);
   const loadingMsgId = await loadingPromise;
   // Borrar el rayito cuando los productos ya cargaron
   const waitMs = SHOP_LOADING ? SHOP_LOADING_MIN_MS - (Date.now() - loadingStartedAt) : 0;
   if (waitMs > 0) await sleep(waitMs);
-  await loadingEffectPromise;
   if (loadingMsgId) {
     try { await bot.deleteMessage(chatId, loadingMsgId); } catch (e) {}
   }
