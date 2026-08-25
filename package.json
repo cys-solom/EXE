@@ -5,7 +5,9 @@
   "main": "botlite.js",
   "scripts": {
     "start": "node start.js",
-    "bot": "node botlite.js"
+    "bot": "node botlite.js",
+    "admin": "node admin-local.js",
+    "vercel:dev": "npx vercel dev --listen 3000"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
