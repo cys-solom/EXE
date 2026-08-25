@@ -88,7 +88,7 @@ const PRODUCTS_CACHE_MS = Number(process.env.PRODUCTS_CACHE_MS || 300000);
 const CHANNEL_CACHE_MS = Number(process.env.CHANNEL_CACHE_MS || 60000);
 const CHANNEL_CHECK_TIMEOUT_MS = Number(process.env.CHANNEL_CHECK_TIMEOUT_MS || 1000);
 const START_DB_TIMEOUT_MS = Number(process.env.START_DB_TIMEOUT_MS || 500);
-const SHOP_LOADING = process.env.SHOP_LOADING === "true";
+const SHOP_LOADING = process.env.SHOP_LOADING !== "false";
 
 async function withTimeout(promise, ms, fallback, label) {
   let timer = null;
@@ -1117,8 +1117,9 @@ async function showShop(chatId, messageId) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
   // Mostrar rayito de carga mientras se traen los productos
-  const loadingMsgId = SHOP_LOADING ? await showLoadingSticker(chatId) : null;
+  const loadingPromise = SHOP_LOADING ? showLoadingSticker(chatId) : Promise.resolve(null);
   let products = await loadProducts(chatId);
+  const loadingMsgId = await loadingPromise;
   // Borrar el rayito cuando los productos ya cargaron
   if (loadingMsgId) {
     try { await bot.deleteMessage(chatId, loadingMsgId); } catch (e) {}
