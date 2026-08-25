@@ -108,6 +108,21 @@ async function withTimeout(promise, ms, fallback, label) {
   }
 }
 
+async function checkHttp(name, url, options = {}, timeoutMs = 3000) {
+  const started = Date.now();
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    console.log(`[NETCHECK] ${name} status=${res.status} ms=${Date.now() - started}`);
+    return true;
+  } catch (e) {
+    console.error(`[NETCHECK] ${name} failed ms=${Date.now() - started}: ${e.message}`);
+    return false;
+  }
+}
+
 function clearUserCache(chatId) {
   if (chatId) delete global.userProfileCache[chatId];
 }
@@ -265,10 +280,16 @@ function formatDeliveredProducts(content) {
 }
 
 function styledButton(text, callback_data, style = "success", icon_custom_emoji_id = null) {
-  return { text, callback_data };
+  const button = { text, callback_data };
+  if (style) button.style = style;
+  if (icon_custom_emoji_id) button.icon_custom_emoji_id = String(icon_custom_emoji_id);
+  return button;
 }
 function styledUrlButton(text, url, style = "success", icon_custom_emoji_id = null) {
-  return { text, url };
+  const button = { text, url };
+  if (style) button.style = style;
+  if (icon_custom_emoji_id) button.icon_custom_emoji_id = String(icon_custom_emoji_id);
+  return button;
 }
 
 async function sendAdminLog(text) {
@@ -797,7 +818,12 @@ function L(lang) {
 async function getUserProfile(chatId) {
   const cached = global.userProfileCache[chatId];
   if (cached && Date.now() - cached.time < USER_CACHE_MS) return cached.data;
-  const { data } = await supabase.from("users").select("*").eq("id", chatId).maybeSingle();
+  const { data } = await withTimeout(
+    supabase.from("users").select("*").eq("id", chatId).maybeSingle(),
+    START_DB_TIMEOUT_MS,
+    { data: cached?.data || null },
+    `user profile ${chatId}`
+  );
   const profile = data || { id: chatId, balance: 0, language: "ar" };
   global.userProfileCache[chatId] = { data: profile, time: Date.now() };
   return profile;
@@ -2224,7 +2250,13 @@ bot.onText(/\/start/, async msg => {
 // ============================================================
 async function ensureReadyForShortcut(chatId, msg) {
   syncUsername(chatId, msg.from);
-  const { data: user } = await supabase.from("users").select("*").eq("id", chatId).maybeSingle();
+  const { data: user } = await withTimeout(
+    supabase.from("users").select("*").eq("id", chatId).maybeSingle(),
+    START_DB_TIMEOUT_MS,
+    { data: global.userProfileCache[chatId]?.data || null },
+    `shortcut user ${chatId}`
+  );
+  if (user) global.userProfileCache[chatId] = { data: user, time: Date.now() };
   const gateLang = (user && user.language) ? user.language : ((msg.from.language_code || "en").startsWith("ar") ? "ar" : "en");
   if (!(await isUserInChannel(chatId))) { await showJoinChannelGate(chatId, gateLang, null); return false; }
   if (!user || !user.language) { await showLangSelection(chatId, null); return false; }
@@ -2272,10 +2304,15 @@ bot.onText(/^\/help$/, async msg => {
 });
 
 bot.on("callback_query", async query => {
+  const callbackStartedAt = Date.now();
+  let callbackData = "";
+  let callbackChatId = "";
   try {
     const chatId = query.message?.chat?.id;
     const messageId = query.message?.message_id;
     const data = query.data;
+    callbackData = data;
+    callbackChatId = chatId;
     syncUsername(chatId, query.from);
     if (data !== "where_order_id") { try { await bot.answerCallbackQuery(query.id); } catch (e) {} }
     if (data === "noop") return;
@@ -2360,6 +2397,8 @@ bot.on("callback_query", async query => {
     }
   } catch (err) {
     console.error("[CALLBACK] error:", err.message);
+  } finally {
+    console.log(`[PERF callback] chat=${callbackChatId || "-"} data=${callbackData || "-"} total=${Date.now() - callbackStartedAt}ms`);
   }
 });
 
@@ -2472,6 +2511,16 @@ bot.setMyCommands([
 ]).catch(e => console.error("[COMMANDS] no se pudieron registrar:", e.message));
 
 startProductSync(supabase);
+
+checkHttp("supabase", `${String(process.env.SUPABASE_URL || "").replace(/\/+$/, "")}/rest/v1/`, {
+  headers: {
+    apikey: process.env.SUPABASE_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_KEY}`
+  }
+});
+checkHttp("kokoro", `${String(process.env.KOKORO_API_URL || "https://api.shopdigital.app").replace(/\/+$/, "")}/api/products`, {
+  headers: { Authorization: `Bearer ${process.env.KOKORO_API_KEY}` }
+});
 
 payments.startBep20Poller(supabase, {
   onTopup: async (telegram_id, amount, txid) => {
