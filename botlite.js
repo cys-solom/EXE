@@ -262,16 +262,10 @@ function formatDeliveredProducts(content) {
 }
 
 function styledButton(text, callback_data, style = "success", icon_custom_emoji_id = null) {
-  const button = { text, callback_data };
-  if (style) button.style = style;
-  if (icon_custom_emoji_id) button.icon_custom_emoji_id = String(icon_custom_emoji_id);
-  return button;
+  return { text, callback_data };
 }
 function styledUrlButton(text, url, style = "success", icon_custom_emoji_id = null) {
-  const button = { text, url };
-  if (style) button.style = style;
-  if (icon_custom_emoji_id) button.icon_custom_emoji_id = String(icon_custom_emoji_id);
-  return button;
+  return { text, url };
 }
 
 async function sendAdminLog(text) {
@@ -600,7 +594,12 @@ async function editOrSend(chatId, messageId, text, keyboard) {
       /* fallo real (mensaje borrado, etc.): enviar nuevo */
     }
   }
-  return bot.sendMessage(chatId, text, opts);
+  try {
+    return await bot.sendMessage(chatId, text, opts);
+  } catch (e) {
+    console.error("[TELEGRAM] sendMessage failed:", e.message);
+    throw e;
+  }
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -1159,6 +1158,7 @@ async function showShop(chatId, messageId) {
 
   kb.push([styledButton(t.refresh, "shop", "success", ICON("REFRESH"))]);
   kb.push([styledButton(t.backHome, "home", "danger", ICON("BACK"))]);
+  console.log(`[SHOP] Rendering products=${products.length} buttons=${kb.length}`);
   return editOrSend(chatId, messageId, `${tg("📊", ICON("STOCK"))} <b>${t.chooseProduct}</b>`, kb);
 }
 
