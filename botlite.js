@@ -2359,7 +2359,7 @@ bot.on("callback_query", async query => {
         null,
         `setlang save ${chatId}`
       );
-      if (!existing || !existing.language) {
+      if (false && (!existing || !existing.language)) {
         try { const { count } = await supabase.from("users").select("*", { count: "exact", head: true }); await sendAdminLog(`😍 NUEVO USUARIO REGISTRADO\n\n👤 ${query.from.first_name || "-"}\n📛 @${query.from.username || "sin_username"}\n🆔 ${chatId}\n👥 Usuario #${count || "?"}`); } catch (e) {}
       }
       return showHome(chatId, messageId, profile);
