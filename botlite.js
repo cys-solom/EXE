@@ -58,6 +58,19 @@ global.emailSessions = {};
 // Cache de la lista de productos que piden correo (tabla email_activation_products)
 global.emailActivationList = [];
 global.emailActivationListTime = 0;
+global.userProfileCache = {};
+global.productsCache = { data: null, time: 0 };
+
+const USER_CACHE_MS = Number(process.env.USER_CACHE_MS || 15000);
+const PRODUCTS_CACHE_MS = Number(process.env.PRODUCTS_CACHE_MS || 30000);
+
+function clearUserCache(chatId) {
+  if (chatId) delete global.userProfileCache[chatId];
+}
+
+function clearProductsCache() {
+  global.productsCache = { data: null, time: 0 };
+}
 
 // ============================================================
 //  Helpers UI
@@ -731,8 +744,12 @@ function L(lang) {
 //  Usuarios / balance
 // ============================================================
 async function getUserProfile(chatId) {
+  const cached = global.userProfileCache[chatId];
+  if (cached && Date.now() - cached.time < USER_CACHE_MS) return cached.data;
   const { data } = await supabase.from("users").select("*").eq("id", chatId).maybeSingle();
-  return data || { id: chatId, balance: 0, language: "ar" };
+  const profile = data || { id: chatId, balance: 0, language: "ar" };
+  global.userProfileCache[chatId] = { data: profile, time: Date.now() };
+  return profile;
 }
 async function getUserLanguage(chatId) {
   const p = await getUserProfile(chatId);
@@ -760,6 +777,7 @@ async function deductBalance(chatId, amount) {
   const next = +(current - amount).toFixed(2);
   const { error } = await supabase.from("users").update({ balance: next }).eq("id", chatId).eq("balance", current);
   if (error) return { success: false, balance: current };
+  clearUserCache(chatId);
   await supabase.from("transactions").insert({ telegram_id: chatId, type: "purchase", amount: -amount, description: "Compra" }).then(() => {}).catch(() => {});
   return { success: true, balance: next };
 }
@@ -771,6 +789,7 @@ async function creditBalance(chatId, amount, description = "Recarga") {
   const uname = getUsername(chatId);
   if (uname && uname !== "sin_username") payload.username = uname;
   await supabase.from("users").upsert(payload);
+  clearUserCache(chatId);
   await supabase.from("transactions").insert({ telegram_id: chatId, type: "deposit", amount: Number(amount), description }).then(() => {}).catch(() => {});
   return next;
 }
@@ -846,8 +865,14 @@ function nextBulkHint(p, qty, t) {
 }
 
 async function getShopProducts() {
+  const cached = global.productsCache;
+  if (cached.data && Date.now() - cached.time < PRODUCTS_CACHE_MS) return cached.data;
+
   const out = [];
-  const { data: apiProds } = await supabase.from("products").select("*").eq("enabled", true).gt("stock", 0).order("name");
+  const [{ data: apiProds }, { data: manProds }] = await Promise.all([
+    supabase.from("products").select("*").eq("enabled", true).gt("stock", 0).order("name"),
+    supabase.from("products_manual").select("*").eq("enabled", true).order("name")
+  ]);
   (apiProds || []).forEach(p => {
     const markup = Number(p.markup != null ? p.markup : 30);
     const isFixedMarkup = p.markup_type === "fixed";
@@ -869,15 +894,28 @@ async function getShopProducts() {
       bulk_discounts: tiers, providerId: p.provider_id, nativeId: p.native_id || String(p.id)
     });
   });
-  const { data: manProds } = await supabase.from("products_manual").select("*").eq("enabled", true).order("name");
+  const manualIds = (manProds || []).map(p => p.id);
+  let manualStockCounts = {};
+  if (manualIds.length) {
+    const { data: stockRows } = await supabase
+      .from("stock_manual")
+      .select("product_id")
+      .in("product_id", manualIds)
+      .eq("is_sold", false);
+    manualStockCounts = (stockRows || []).reduce((acc, row) => {
+      acc[row.product_id] = (acc[row.product_id] || 0) + 1;
+      return acc;
+    }, {});
+  }
   for (const p of (manProds || [])) {
-    const { count } = await supabase.from("stock_manual").select("*", { count: "exact", head: true }).eq("product_id", p.id).eq("is_sold", false);
+    const count = manualStockCounts[p.id] || 0;
     if ((count || 0) > 0) out.push({
       kind: "manual", id: `m${p.id}`, manualId: p.id, name: p.name, price: Number(p.price || 0),
       stock: count, min_order: Number(p.min_order || 1), emoji: p.emoji,
       description_es: p.description_es, description_en: p.description_en
     });
   }
+  global.productsCache = { data: out, time: Date.now() };
   return out;
 }
 function sess(chatId) { global.sessions[chatId] = global.sessions[chatId] || {}; return global.sessions[chatId]; }
@@ -1457,6 +1495,7 @@ async function fulfillManual(manualId, qty, chatId, orderId) {
   const ids = rows.map(r => r.id);
   // Guardamos también el número de orden en el stock (para saber qué orden consumió qué unidad)
   await supabase.from("stock_manual").update({ is_sold: true, sold_to: chatId, sold_at: new Date().toISOString(), order_id: orderId }).in("id", ids);
+  clearProductsCache();
   return { success: true, content: rows.map(r => r.content).join("\n") };
 }
 
@@ -2037,9 +2076,9 @@ bot.onText(/^\/correos_del(?:\s+([\s\S]+))?$/, async msg => {
 
 bot.onText(/\/start/, async msg => {
   const chatId = msg.chat.id;
-  await syncUsername(chatId, msg.from);
+  syncUsername(chatId, msg.from);
   const { data: user } = await supabase.from("users").select("*").eq("id", chatId).maybeSingle();
-  await sendAdminLog(`🚀 CLICK START\n\n👤 ${msg.from.first_name || "-"}\n📛 @${msg.from.username || "sin_username"}\n🆔 ${chatId}`);
+  sendAdminLog(`🚀 CLICK START\n\n👤 ${msg.from.first_name || "-"}\n📛 @${msg.from.username || "sin_username"}\n🆔 ${chatId}`).catch(() => {});
 
   // GATE de canal: solo se aplica si CHANNEL_URL está configurado en el .env
   const gateLang = (user && user.language) ? user.language : ((msg.from.language_code || "en").startsWith("ar") ? "ar" : "en");
@@ -2058,7 +2097,7 @@ bot.onText(/\/start/, async msg => {
 //  saltar directo a la pantalla pedida.
 // ============================================================
 async function ensureReadyForShortcut(chatId, msg) {
-  await syncUsername(chatId, msg.from);
+  syncUsername(chatId, msg.from);
   const { data: user } = await supabase.from("users").select("*").eq("id", chatId).maybeSingle();
   const gateLang = (user && user.language) ? user.language : ((msg.from.language_code || "en").startsWith("ar") ? "ar" : "en");
   if (!(await isUserInChannel(chatId))) { await showJoinChannelGate(chatId, gateLang, null); return false; }
@@ -2121,6 +2160,7 @@ bot.on("callback_query", async query => {
       const liveUsername = query.from.username || null;
       global.usernames[chatId] = query.from.username || "sin_username";
       await supabase.from("users").upsert({ id: chatId, language, username: liveUsername, balance: existing?.balance || 0 });
+      clearUserCache(chatId);
       if (!existing || !existing.language) {
         try { const { count } = await supabase.from("users").select("*", { count: "exact", head: true }); await sendAdminLog(`😍 NUEVO USUARIO REGISTRADO\n\n👤 ${query.from.first_name || "-"}\n📛 @${query.from.username || "sin_username"}\n🆔 ${chatId}\n👥 Usuario #${count || "?"}`); } catch (e) {}
       }

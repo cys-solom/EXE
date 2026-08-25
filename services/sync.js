@@ -53,6 +53,19 @@ async function syncProductsOnce(supabase) {
     }
     totalFetched += products.length;
 
+    const ids = products.map(p => {
+      const nativeId = String(p.id);
+      return provider.is_default ? nativeId : `p${provider.id}_${nativeId}`;
+    });
+    const { data: existingRows } = ids.length
+      ? await supabase
+        .from("products")
+        .select("id, markup, markup_type, enabled, emoji, custom_name")
+        .in("id", ids)
+      : { data: [] };
+    const existingById = new Map((existingRows || []).map(row => [String(row.id), row]));
+    const rows = [];
+
     for (const p of products) {
       const nativeId = String(p.id);
       // El proveedor default conserva IDs sin prefijo (compatibilidad con datos existentes);
@@ -60,12 +73,8 @@ async function syncProductsOnce(supabase) {
       const id = provider.is_default ? nativeId : `p${provider.id}_${nativeId}`;
       allApiIds.push(id);
 
-      // Leer lo que ya existe para preservar las configuraciones del revendedor
-      const { data: existing } = await supabase
-        .from("products")
-        .select("markup, markup_type, enabled, emoji, custom_name")
-        .eq("id", id)
-        .maybeSingle();
+      // Leer lo que ya existe para preservar las configuraciones del revendedor.
+      const existing = existingById.get(id);
 
       const row = {
         id,
@@ -97,9 +106,13 @@ async function syncProductsOnce(supabase) {
         row.custom_name = null;
       }
 
-      const { error: upErr } = await supabase.from("products").upsert(row);
-      if (upErr) console.error(`[SYNC] Error guardando ${p.name}:`, upErr.message);
-      else totalUpdated++;
+      rows.push(row);
+    }
+
+    if (rows.length) {
+      const { error: upErr } = await supabase.from("products").upsert(rows);
+      if (upErr) console.error(`[SYNC] Error guardando productos de "${provider.name}":`, upErr.message);
+      else totalUpdated += rows.length;
     }
   }
 
@@ -108,7 +121,8 @@ async function syncProductsOnce(supabase) {
   // el stock de un producto que solo no vino en la pasada de OTRO proveedor).
   if (allApiIds.length > 0) {
     const { data: allLocal } = await supabase.from("products").select("id").not("provider_id", "is", null);
-    const toZero = (allLocal || []).map(r => r.id).filter(id => !allApiIds.includes(id));
+    const activeIdSet = new Set(allApiIds);
+    const toZero = (allLocal || []).map(r => r.id).filter(id => !activeIdSet.has(id));
     for (const id of toZero) {
       await supabase.from("products").update({ stock: 0, updated_at: new Date().toISOString() }).eq("id", id);
     }

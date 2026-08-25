@@ -5,6 +5,7 @@
 //  Docs del contrato: https://api.shopdigital.app/docs
 // ============================================================
 require("dotenv").config();
+const API_TIMEOUT_MS = Number(process.env.KOKORO_API_TIMEOUT_MS || 15000);
 
 // Proveedor "default": el que viene configurado por variables de entorno
 // (KOKORO_API_URL / KOKORO_API_KEY). Se usa como fallback y para crear
@@ -24,11 +25,18 @@ function authHeaders(provider) {
   };
 }
 
+function fetchOptions(options = {}) {
+  return {
+    ...options,
+    signal: AbortSignal.timeout(API_TIMEOUT_MS)
+  };
+}
+
 // GET /api/products -> catalogo mayorista (precio, stock, min_order)
 async function fetchKokoroProducts(provider) {
   const base = String(provider.base_url || "").replace(/\/+$/, "");
   try {
-    const res = await fetch(`${base}/api/products`, { headers: authHeaders(provider) });
+    const res = await fetch(`${base}/api/products`, fetchOptions({ headers: authHeaders(provider) }));
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.success) {
       console.error(`[API ${provider.name || base}] products error:`, res.status, json.error || "");
@@ -45,7 +53,7 @@ async function fetchKokoroProducts(provider) {
 async function fetchKokoroBalance(provider) {
   const base = String(provider.base_url || "").replace(/\/+$/, "");
   try {
-    const res = await fetch(`${base}/api/balance`, { headers: authHeaders(provider) });
+    const res = await fetch(`${base}/api/balance`, fetchOptions({ headers: authHeaders(provider) }));
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.success) {
       return { success: false, balance: 0, error: json.error || `HTTP ${res.status}` };
@@ -61,7 +69,7 @@ async function fetchKokoroBalance(provider) {
 async function purchaseKokoro(provider, productId, quantity, externalOrderId) {
   const base = String(provider.base_url || "").replace(/\/+$/, "");
   try {
-    const res = await fetch(`${base}/api/purchase`, {
+    const res = await fetch(`${base}/api/purchase`, fetchOptions({
       method: "POST",
       headers: authHeaders(provider),
       body: JSON.stringify({
@@ -69,7 +77,7 @@ async function purchaseKokoro(provider, productId, quantity, externalOrderId) {
         quantity: Number(quantity) || 1,
         external_order_id: String(externalOrderId || "")
       })
-    });
+    }));
     const json = await res.json().catch(() => ({}));
 
     if (res.ok && json.success) {
