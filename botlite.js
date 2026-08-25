@@ -40,13 +40,16 @@ const WEBHOOK_BASE_URL = normalizePublicUrl(
   process.env.PUBLIC_URL ||
   process.env.RAILWAY_PUBLIC_DOMAIN
 );
-const USE_WEBHOOK = Boolean(process.env.PORT && WEBHOOK_BASE_URL && process.env.FORCE_WEBHOOK === "true");
+const USE_WEBHOOK = Boolean(process.env.PORT && WEBHOOK_BASE_URL && process.env.FORCE_POLLING !== "true");
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, USE_WEBHOOK
   ? { webHook: { host: "0.0.0.0", port: Number(process.env.PORT), healthEndpoint: "/healthz" } }
   : { polling: { interval: 100, params: { timeout: 10 } } }
 );
 console.log(`[TRANSPORT] ${USE_WEBHOOK ? "webhook" : "polling"} port=${process.env.PORT || "-"} publicUrl=${WEBHOOK_BASE_URL ? "yes" : "no"}`);
+if (process.env.PORT && !WEBHOOK_BASE_URL) {
+  console.warn("[TRANSPORT] No public URL found. Set WEBHOOK_URL=https://your-service.up.railway.app for instant Telegram replies.");
+}
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const ADMIN_LOG_GROUP = process.env.ADMIN_LOG_GROUP || null;
 
@@ -2502,7 +2505,7 @@ payments.startBep20Poller(supabase, {
 // abierto y marque el deploy como sano. No sirve ninguna pagina real.
 if (USE_WEBHOOK) {
   const webhookUrl = `${WEBHOOK_BASE_URL}/${process.env.BOT_TOKEN}`;
-  bot.setWebHook(webhookUrl)
+  bot.setWebHook(webhookUrl, { drop_pending_updates: true })
     .then(() => console.log(`[WEBHOOK] Activo en ${WEBHOOK_BASE_URL}/<token> (health: /healthz)`))
     .catch(e => console.error("[WEBHOOK] No se pudo activar:", e.message));
 } else if (process.env.PORT) {
