@@ -46,6 +46,7 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, USE_WEBHOOK
   ? { webHook: { host: "0.0.0.0", port: Number(process.env.PORT), healthEndpoint: "/healthz" } }
   : { polling: { interval: 100, params: { timeout: 10 } } }
 );
+console.log(`[TRANSPORT] ${USE_WEBHOOK ? "webhook" : "polling"} port=${process.env.PORT || "-"} publicUrl=${WEBHOOK_BASE_URL ? "yes" : "no"}`);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const ADMIN_LOG_GROUP = process.env.ADMIN_LOG_GROUP || null;
 
@@ -82,6 +83,27 @@ const USER_CACHE_MS = Number(process.env.USER_CACHE_MS || 15000);
 const PRODUCTS_CACHE_MS = Number(process.env.PRODUCTS_CACHE_MS || 30000);
 const CHANNEL_CACHE_MS = Number(process.env.CHANNEL_CACHE_MS || 60000);
 const CHANNEL_CHECK_TIMEOUT_MS = Number(process.env.CHANNEL_CHECK_TIMEOUT_MS || 1000);
+const START_DB_TIMEOUT_MS = Number(process.env.START_DB_TIMEOUT_MS || 1200);
+
+async function withTimeout(promise, ms, fallback, label) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise(resolve => {
+        timer = setTimeout(() => {
+          if (label) console.warn(`[TIMEOUT] ${label} after ${ms}ms`);
+          resolve(fallback);
+        }, ms);
+      })
+    ]);
+  } catch (err) {
+    if (label) console.warn(`[ERROR] ${label}:`, err.message);
+    return fallback;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function clearUserCache(chatId) {
   if (chatId) delete global.userProfileCache[chatId];
@@ -2103,22 +2125,36 @@ bot.onText(/^\/correos_del(?:\s+([\s\S]+))?$/, async msg => {
 
 bot.onText(/\/start/, async msg => {
   const chatId = msg.chat.id;
+  const startedAt = Date.now();
   syncUsername(chatId, msg.from);
-  const userPromise = supabase.from("users").select("*").eq("id", chatId).maybeSingle();
+  const cachedUser = global.userProfileCache[chatId]?.data || null;
+  const userPromise = cachedUser
+    ? Promise.resolve({ data: cachedUser })
+    : withTimeout(
+      supabase.from("users").select("*").eq("id", chatId).maybeSingle(),
+      START_DB_TIMEOUT_MS,
+      { data: null },
+      "/start user lookup"
+    );
   const channelPromise = isUserInChannel(chatId);
   const { data: user } = await userPromise;
+  const userMs = Date.now() - startedAt;
   if (user) global.userProfileCache[chatId] = { data: user, time: Date.now() };
   sendAdminLog(`🚀 CLICK START\n\n👤 ${msg.from.first_name || "-"}\n📛 @${msg.from.username || "sin_username"}\n🆔 ${chatId}`).catch(() => {});
 
   // GATE de canal: solo se aplica si CHANNEL_URL está configurado en el .env
   const gateLang = (user && user.language) ? user.language : ((msg.from.language_code || "en").startsWith("ar") ? "ar" : "en");
-  if (!(await channelPromise)) {
-    return showJoinChannelGate(chatId, gateLang, null);
-  }
+  const inChannel = await channelPromise;
+  const channelMs = Date.now() - startedAt - userMs;
+  const responseStart = Date.now();
+  let response;
+  if (!inChannel) response = await showJoinChannelGate(chatId, gateLang, null);
 
   // Usuario nuevo o sin idioma -> mostrar selector (ahi se crea/guarda en Supabase)
-  if (!user || !user.language) return showLangSelection(chatId, null);
-  return showHome(chatId, null, user);
+  else if (!user || !user.language) response = await showLangSelection(chatId, null);
+  else response = await showHome(chatId, null, user);
+  console.log(`[PERF /start] chat=${chatId} user=${userMs}ms channel=${channelMs}ms send=${Date.now() - responseStart}ms total=${Date.now() - startedAt}ms webhook=${USE_WEBHOOK}`);
+  return response;
 });
 
 // ============================================================
