@@ -19,7 +19,7 @@ if (typeof globalThis.WebSocket === "undefined") {
 const TelegramBot = require("node-telegram-bot-api");
 const { createClient } = require("@supabase/supabase-js");
 
-const { fetchKokoroBalance, purchaseKokoro, defaultProviderFromEnv } = require("./services/kokoroApi.js");
+const { fetchKokoroProducts, fetchKokoroBalance, purchaseKokoro, defaultProviderFromEnv } = require("./services/kokoroApi.js");
 const { productIcon, productTextEmoji } = require("./services/emojis.js");
 const { startProductSync, getActiveProviders } = require("./services/sync.js");
 const payments = require("./services/payments.js");
@@ -883,6 +883,57 @@ function priceLabel(p, t) {
   return `$${money(p.price)}`;
 }
 
+function mapKokoroProductRow(p) {
+  const markup = Number(p.markup != null ? p.markup : 30);
+  const isFixedMarkup = p.markup_type === "fixed";
+  const rawTiers = Array.isArray(p.bulk_discounts) ? p.bulk_discounts : [];
+  const tiers = rawTiers.map(tr => ({
+    min_qty: Number(tr.min_qty),
+    unit_price: +(isFixedMarkup
+      ? (Number(tr.unit_price || 0) + markup)
+      : (Number(tr.unit_price || 0) * (1 + markup / 100))
+    ).toFixed(2),
+    discount_percent: Number(tr.discount_percent || 0)
+  }));
+  return {
+    kind: "kokoro",
+    id: String(p.id),
+    name: (p.custom_name && p.custom_name.trim()) || p.name,
+    price: finalPrice(p),
+    stock: Number(p.stock || 0),
+    min_order: Number(p.min_order || 1),
+    emoji: p.emoji,
+    description_es: p.description_es,
+    description_en: p.description_en,
+    bulk_discounts: tiers,
+    providerId: p.provider_id,
+    nativeId: p.native_id || String(p.id)
+  };
+}
+
+function mapLiveKokoroProduct(provider, p) {
+  const markup = 30;
+  const rawTiers = Array.isArray(p.bulk_discounts) ? p.bulk_discounts : [];
+  return {
+    kind: "kokoro",
+    id: provider.is_default ? String(p.id) : `p${provider.id}_${p.id}`,
+    name: p.name,
+    price: +(Number(p.price || 0) * (1 + markup / 100)).toFixed(2),
+    stock: Number(p.stock || 0),
+    min_order: Number(p.min_order || 1),
+    emoji: null,
+    description_es: p.description_es,
+    description_en: p.description_en,
+    bulk_discounts: rawTiers.map(tr => ({
+      min_qty: Number(tr.min_qty),
+      unit_price: +(Number(tr.unit_price || 0) * (1 + markup / 100)).toFixed(2),
+      discount_percent: Number(tr.discount_percent || 0)
+    })),
+    providerId: provider.id,
+    nativeId: String(p.id)
+  };
+}
+
 // Bloque visual de "Descuentos por Volumen" (igual que el bot principal).
 function bulkDiscountBlock(p, t) {
   const tiers = (Array.isArray(p.bulk_discounts) ? p.bulk_discounts : [])
@@ -918,31 +969,32 @@ async function getShopProducts() {
   if (cached.data && Date.now() - cached.time < PRODUCTS_CACHE_MS) return cached.data;
 
   const out = [];
-  const [{ data: apiProds }, { data: manProds }] = await Promise.all([
+  const [{ data: apiProds, error: apiErr }, { data: manProds, error: manErr }] = await Promise.all([
     supabase.from("products").select("*").eq("enabled", true).gt("stock", 0).order("name"),
     supabase.from("products_manual").select("*").eq("enabled", true).order("name")
   ]);
-  (apiProds || []).forEach(p => {
-    const markup = Number(p.markup != null ? p.markup : 30);
-    const isFixedMarkup = p.markup_type === "fixed";
-    // Los tramos de la API traen el precio MAYORISTA por unidad; le aplicamos el markup
-    // del revendedor (% o monto fijo) a cada tramo para obtener el precio final al cliente.
-    const rawTiers = Array.isArray(p.bulk_discounts) ? p.bulk_discounts : [];
-    const tiers = rawTiers.map(tr => ({
-      min_qty: Number(tr.min_qty),
-      unit_price: +(isFixedMarkup
-        ? (Number(tr.unit_price || 0) + markup)
-        : (Number(tr.unit_price || 0) * (1 + markup / 100))
-      ).toFixed(2),
-      discount_percent: Number(tr.discount_percent || 0)
-    }));
-    out.push({
-      kind: "kokoro", id: String(p.id), name: (p.custom_name && p.custom_name.trim()) || p.name, price: finalPrice(p),
-      stock: Number(p.stock || 0), min_order: Number(p.min_order || 1), emoji: p.emoji,
-      description_es: p.description_es, description_en: p.description_en,
-      bulk_discounts: tiers, providerId: p.provider_id, nativeId: p.native_id || String(p.id)
-    });
-  });
+  if (apiErr) console.error("[SHOP] products query error:", apiErr.message);
+  if (manErr) console.error("[SHOP] products_manual query error:", manErr.message);
+  (apiProds || []).forEach(p => out.push(mapKokoroProductRow(p)));
+
+  if (!out.length) {
+    try {
+      const providers = await getActiveProviders(supabase);
+      for (const provider of providers) {
+        const live = await fetchKokoroProducts(provider);
+        if (!live.success) {
+          console.error(`[SHOP] live products error (${provider.name}):`, live.error);
+          continue;
+        }
+        (live.products || [])
+          .filter(p => Number(p.stock || 0) > 0)
+          .forEach(p => out.push(mapLiveKokoroProduct(provider, p)));
+      }
+      if (out.length) console.log(`[SHOP] Using live API fallback products: ${out.length}`);
+    } catch (e) {
+      console.error("[SHOP] live products fallback exception:", e.message);
+    }
+  }
   const manualIds = (manProds || []).map(p => p.id);
   let manualStockCounts = {};
   if (manualIds.length) {
