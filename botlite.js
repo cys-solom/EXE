@@ -89,6 +89,7 @@ const CHANNEL_CACHE_MS = Number(process.env.CHANNEL_CACHE_MS || 60000);
 const CHANNEL_CHECK_TIMEOUT_MS = Number(process.env.CHANNEL_CHECK_TIMEOUT_MS || 1000);
 const START_DB_TIMEOUT_MS = Number(process.env.START_DB_TIMEOUT_MS || 500);
 const SHOP_LOADING = process.env.SHOP_LOADING !== "false";
+const SHOP_LOADING_MIN_MS = Number(process.env.SHOP_LOADING_MIN_MS || 650);
 
 async function withTimeout(promise, ms, fallback, label) {
   let timer = null;
@@ -1118,10 +1119,13 @@ async function showShop(chatId, messageId) {
   const t = L(lang);
   // Mostrar rayito de carga mientras se traen los productos
   const loadingPromise = SHOP_LOADING ? showLoadingSticker(chatId) : Promise.resolve(null);
+  const loadingStartedAt = Date.now();
   let products = await loadProducts(chatId);
   const loadingMsgId = await loadingPromise;
   // Borrar el rayito cuando los productos ya cargaron
   if (loadingMsgId) {
+    const waitMs = SHOP_LOADING_MIN_MS - (Date.now() - loadingStartedAt);
+    if (waitMs > 0) await sleep(waitMs);
     try { await bot.deleteMessage(chatId, loadingMsgId); } catch (e) {}
   }
   if (products.length === 0) {
@@ -2339,15 +2343,26 @@ bot.on("callback_query", async query => {
 
     if (data === "setlang_en" || data === "setlang_ar") {
       const language = data === "setlang_ar" ? "ar" : "en";
-      const { data: existing } = await supabase.from("users").select("*").eq("id", chatId).maybeSingle();
+      const { data: existing } = await withTimeout(
+        supabase.from("users").select("*").eq("id", chatId).maybeSingle(),
+        START_DB_TIMEOUT_MS,
+        { data: global.userProfileCache[chatId]?.data || null },
+        `setlang lookup ${chatId}`
+      );
       const liveUsername = query.from.username || null;
       global.usernames[chatId] = query.from.username || "sin_username";
-      await supabase.from("users").upsert({ id: chatId, language, username: liveUsername, balance: existing?.balance || 0 });
-      clearUserCache(chatId);
+      const profile = { id: chatId, balance: existing?.balance || 0, ...existing, language, username: liveUsername };
+      global.userProfileCache[chatId] = { data: profile, time: Date.now() };
+      withTimeout(
+        supabase.from("users").upsert({ id: chatId, language, username: liveUsername, balance: profile.balance }),
+        START_DB_TIMEOUT_MS,
+        null,
+        `setlang save ${chatId}`
+      );
       if (!existing || !existing.language) {
         try { const { count } = await supabase.from("users").select("*", { count: "exact", head: true }); await sendAdminLog(`😍 NUEVO USUARIO REGISTRADO\n\n👤 ${query.from.first_name || "-"}\n📛 @${query.from.username || "sin_username"}\n🆔 ${chatId}\n👥 Usuario #${count || "?"}`); } catch (e) {}
       }
-      return showHome(chatId, messageId);
+      return showHome(chatId, messageId, profile);
     }
 
     // Verificación del canal ("Ya me uní")
