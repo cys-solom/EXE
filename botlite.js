@@ -89,8 +89,9 @@ const CHANNEL_CACHE_MS = Number(process.env.CHANNEL_CACHE_MS || 60000);
 const CHANNEL_CHECK_TIMEOUT_MS = Number(process.env.CHANNEL_CHECK_TIMEOUT_MS || 1000);
 const START_DB_TIMEOUT_MS = Number(process.env.START_DB_TIMEOUT_MS || 500);
 const SHOP_LOADING = process.env.SHOP_LOADING !== "false";
-const SHOP_LOADING_MIN_MS = Number(process.env.SHOP_LOADING_MIN_MS || 1600);
+const SHOP_LOADING_MIN_MS = Number(process.env.SHOP_LOADING_MIN_MS || 4000);
 const SHOP_LIGHTNING_EFFECT_ID = process.env.SHOP_LIGHTNING_EFFECT_ID || "5123236135417415011";
+let shopLoadingNonce = 0;
 
 async function withTimeout(promise, ms, fallback, label) {
   let timer = null;
@@ -1106,12 +1107,14 @@ async function showHome(chatId, messageId, knownProfile = null) {
 async function showLoadingSticker(chatId) {
   const opts = { parse_mode: "HTML" };
   if (SHOP_LIGHTNING_EFFECT_ID) opts.message_effect_id = String(SHOP_LIGHTNING_EFFECT_ID);
+  const invisibleNonce = "\u2060".repeat((shopLoadingNonce++ % 4) + 1);
+  const text = `${tg("\u26A1", ICON("LIGHTNING"))}${invisibleNonce}`;
   try {
-    const res = await bot.sendMessage(chatId, tg("\u26A1", ICON("LIGHTNING")), opts);
+    const res = await bot.sendMessage(chatId, text, opts);
     return res.message_id;
   } catch (err) {
     try {
-      const res = await bot.sendMessage(chatId, tg("\u26A1", ICON("LIGHTNING")), { parse_mode: "HTML" });
+      const res = await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
       return res.message_id;
     } catch (e) { return null; }
   }
