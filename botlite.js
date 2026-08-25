@@ -1122,7 +1122,7 @@ async function showShop(chatId, messageId) {
   const loadingPromise = SHOP_LOADING && !messageId ? showLoadingSticker(chatId) : Promise.resolve(null);
   if (SHOP_LOADING && messageId) {
     try {
-      await bot.editMessageText(tg("âš¡", ICON("LIGHTNING")), {
+      await bot.editMessageText(tg("\u26A1", ICON("LIGHTNING")), {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: "HTML"
