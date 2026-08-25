@@ -29,7 +29,23 @@ for (const k of REQUIRED) {
   if (!process.env[k]) { console.error(`FALTA en .env: ${k}`); process.exit(1); }
 }
 
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+function normalizePublicUrl(raw) {
+  const value = String(raw || "").trim().replace(/\/+$/, "");
+  if (!value) return "";
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
+const WEBHOOK_BASE_URL = normalizePublicUrl(
+  process.env.WEBHOOK_URL ||
+  process.env.PUBLIC_URL ||
+  process.env.RAILWAY_PUBLIC_DOMAIN
+);
+const USE_WEBHOOK = Boolean(process.env.PORT && WEBHOOK_BASE_URL && process.env.DISABLE_WEBHOOK !== "true");
+
+const bot = new TelegramBot(process.env.BOT_TOKEN, USE_WEBHOOK
+  ? { webHook: { host: "0.0.0.0", port: Number(process.env.PORT), healthEndpoint: "/healthz" } }
+  : { polling: { interval: 100, params: { timeout: 10 } } }
+);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const ADMIN_LOG_GROUP = process.env.ADMIN_LOG_GROUP || null;
 
@@ -2377,11 +2393,18 @@ payments.startBep20Poller(supabase, {
 
 // Servidor HTTP minimo: solo para que Railway (u otro host) detecte un puerto
 // abierto y marque el deploy como sano. No sirve ninguna pagina real.
-if (process.env.PORT) {
+if (USE_WEBHOOK) {
+  const webhookUrl = `${WEBHOOK_BASE_URL}/${process.env.BOT_TOKEN}`;
+  bot.setWebHook(webhookUrl)
+    .then(() => console.log(`[WEBHOOK] Activo en ${WEBHOOK_BASE_URL}/<token> (health: /healthz)`))
+    .catch(e => console.error("[WEBHOOK] No se pudo activar:", e.message));
+} else if (process.env.PORT) {
   require("http").createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end(`${SHOP_NAME} bot esta corriendo.`);
+    res.end(`${SHOP_NAME} bot esta corriendo en polling.`);
   }).listen(process.env.PORT, () => console.log(`[HTTP] Healthcheck activo en el puerto ${process.env.PORT}`));
+} else {
+  bot.deleteWebHook().catch(() => {});
 }
 
 console.log(`✅ ${SHOP_NAME} LITE iniciado.`);
