@@ -979,7 +979,12 @@ async function getShopProducts() {
 
   if (!out.length) {
     try {
-      const providers = await getActiveProviders(supabase);
+      let providers = await getActiveProviders(supabase);
+      if (!providers.length) {
+        const def = defaultProviderFromEnv();
+        console.warn(`[SHOP] No active providers from Supabase. envProvider=${def.api_key ? "yes" : "no"}`);
+        if (def.api_key) providers = [{ ...def, id: null, active: true, is_default: true }];
+      }
       for (const provider of providers) {
         const live = await fetchKokoroProducts(provider);
         if (!live.success) {

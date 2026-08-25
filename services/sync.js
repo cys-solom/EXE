@@ -11,7 +11,10 @@ const SYNC_MINUTES = Number(process.env.SYNC_INTERVAL_MINUTES || 5);
 
 function defaultProviderFallback(reason) {
   const def = defaultProviderFromEnv();
-  if (!def.api_key) return [];
+  if (!def.api_key) {
+    if (reason) console.warn(`[SYNC] No se puede usar proveedor default: falta KOKORO_API_KEY (${reason})`);
+    return [];
+  }
   if (reason) console.warn(`[SYNC] Usando proveedor default de .env: ${reason}`);
   return [{ ...def, id: null, active: true, is_default: true }];
 }
