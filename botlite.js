@@ -80,13 +80,15 @@ global.emailActivationList = [];
 global.emailActivationListTime = 0;
 global.userProfileCache = {};
 global.productsCache = { data: null, time: 0 };
+global.productsRefreshPromise = null;
 global.channelMemberCache = {};
 
 const USER_CACHE_MS = Number(process.env.USER_CACHE_MS || 15000);
-const PRODUCTS_CACHE_MS = Number(process.env.PRODUCTS_CACHE_MS || 30000);
+const PRODUCTS_CACHE_MS = Number(process.env.PRODUCTS_CACHE_MS || 300000);
 const CHANNEL_CACHE_MS = Number(process.env.CHANNEL_CACHE_MS || 60000);
 const CHANNEL_CHECK_TIMEOUT_MS = Number(process.env.CHANNEL_CHECK_TIMEOUT_MS || 1000);
-const START_DB_TIMEOUT_MS = Number(process.env.START_DB_TIMEOUT_MS || 1200);
+const START_DB_TIMEOUT_MS = Number(process.env.START_DB_TIMEOUT_MS || 500);
+const SHOP_LOADING = process.env.SHOP_LOADING === "true";
 
 async function withTimeout(promise, ms, fallback, label) {
   let timer = null;
@@ -992,10 +994,7 @@ function nextBulkHint(p, qty, t) {
   return "";
 }
 
-async function getShopProducts() {
-  const cached = global.productsCache;
-  if (cached.data && Date.now() - cached.time < PRODUCTS_CACHE_MS) return cached.data;
-
+async function fetchShopProductsFresh() {
   const out = [];
   const [{ data: apiProds, error: apiErr }, { data: manProds, error: manErr }] = await Promise.all([
     supabase.from("products").select("*").eq("enabled", true).gt("stock", 0).order("name"),
@@ -1052,6 +1051,26 @@ async function getShopProducts() {
   if (out.length) global.productsCache = { data: out, time: Date.now() };
   return out;
 }
+
+function refreshProductsInBackground() {
+  if (global.productsRefreshPromise) return global.productsRefreshPromise;
+  global.productsRefreshPromise = fetchShopProductsFresh()
+    .catch(e => {
+      console.error("[SHOP] background refresh failed:", e.message);
+      return [];
+    })
+    .finally(() => { global.productsRefreshPromise = null; });
+  return global.productsRefreshPromise;
+}
+
+async function getShopProducts() {
+  const cached = global.productsCache;
+  if (cached.data && cached.data.length) {
+    if (Date.now() - cached.time >= PRODUCTS_CACHE_MS) refreshProductsInBackground();
+    return cached.data;
+  }
+  return fetchShopProductsFresh();
+}
 function sess(chatId) { global.sessions[chatId] = global.sessions[chatId] || {}; return global.sessions[chatId]; }
 async function loadProducts(chatId) { const p = await getShopProducts(); sess(chatId).products = p; return p; }
 
@@ -1098,7 +1117,7 @@ async function showShop(chatId, messageId) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
   // Mostrar rayito de carga mientras se traen los productos
-  const loadingMsgId = await showLoadingSticker(chatId);
+  const loadingMsgId = SHOP_LOADING ? await showLoadingSticker(chatId) : null;
   let products = await loadProducts(chatId);
   // Borrar el rayito cuando los productos ya cargaron
   if (loadingMsgId) {
@@ -2511,6 +2530,7 @@ bot.setMyCommands([
 ]).catch(e => console.error("[COMMANDS] no se pudieron registrar:", e.message));
 
 startProductSync(supabase);
+refreshProductsInBackground();
 
 checkHttp("supabase", `${String(process.env.SUPABASE_URL || "").replace(/\/+$/, "")}/rest/v1/`, {
   headers: {

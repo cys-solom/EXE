@@ -5,7 +5,7 @@
 //  Docs del contrato: https://api.shopdigital.app/docs
 // ============================================================
 require("dotenv").config();
-const API_TIMEOUT_MS = Number(process.env.KOKORO_API_TIMEOUT_MS || 15000);
+const API_TIMEOUT_MS = Number(process.env.KOKORO_API_TIMEOUT_MS || 6000);
 
 // Proveedor "default": el que viene configurado por variables de entorno
 // (KOKORO_API_URL / KOKORO_API_KEY). Se usa como fallback y para crear
