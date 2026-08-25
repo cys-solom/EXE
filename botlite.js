@@ -76,9 +76,12 @@ global.emailActivationList = [];
 global.emailActivationListTime = 0;
 global.userProfileCache = {};
 global.productsCache = { data: null, time: 0 };
+global.channelMemberCache = {};
 
 const USER_CACHE_MS = Number(process.env.USER_CACHE_MS || 15000);
 const PRODUCTS_CACHE_MS = Number(process.env.PRODUCTS_CACHE_MS || 30000);
+const CHANNEL_CACHE_MS = Number(process.env.CHANNEL_CACHE_MS || 60000);
+const CHANNEL_CHECK_TIMEOUT_MS = Number(process.env.CHANNEL_CHECK_TIMEOUT_MS || 1000);
 
 function clearUserCache(chatId) {
   if (chatId) delete global.userProfileCache[chatId];
@@ -117,9 +120,17 @@ function getChannelCheckId() {
 async function isUserInChannel(userId) {
   const channelId = getChannelCheckId();
   if (!channelId) return true;                 // no configurado -> permitir
+  const cacheKey = `${channelId}:${userId}`;
+  const cached = global.channelMemberCache[cacheKey];
+  if (cached && Date.now() - cached.time < CHANNEL_CACHE_MS) return cached.ok;
   try {
-    const member = await bot.getChatMember(channelId, userId);
-    return member.status !== "left" && member.status !== "kicked";
+    const member = await Promise.race([
+      bot.getChatMember(channelId, userId),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("channel check timeout")), CHANNEL_CHECK_TIMEOUT_MS))
+    ]);
+    const ok = member.status !== "left" && member.status !== "kicked";
+    global.channelMemberCache[cacheKey] = { ok, time: Date.now() };
+    return ok;
   } catch (err) {
     // fail-open: si el bot no es admin del canal u otro error, NO bloquear a los clientes
     console.warn("[CANAL] No se pudo verificar membresía (¿el bot es admin del canal?):", err.message);
@@ -940,10 +951,10 @@ async function loadProducts(chatId) { const p = await getShopProducts(); sess(ch
 // ============================================================
 //  Pantalla: Menu principal (home)
 // ============================================================
-async function showHome(chatId, messageId) {
-  const lang = await getUserLanguage(chatId);
+async function showHome(chatId, messageId, knownProfile = null) {
+  const profile = knownProfile || await getUserProfile(chatId);
+  const lang = profile.language === "en" ? "en" : "ar";
   const t = L(lang);
-  const profile = await getUserProfile(chatId);
   const text = `${tg("🔥", ICON("LIGHTNING"))} <b>${t.welcome}!</b>\n\n${tg("💰", ICON("MONEY"))} ${t.yourBalance}: <b>$${money(profile.balance)}</b>`;
 
   const kb = [
@@ -2093,18 +2104,21 @@ bot.onText(/^\/correos_del(?:\s+([\s\S]+))?$/, async msg => {
 bot.onText(/\/start/, async msg => {
   const chatId = msg.chat.id;
   syncUsername(chatId, msg.from);
-  const { data: user } = await supabase.from("users").select("*").eq("id", chatId).maybeSingle();
+  const userPromise = supabase.from("users").select("*").eq("id", chatId).maybeSingle();
+  const channelPromise = isUserInChannel(chatId);
+  const { data: user } = await userPromise;
+  if (user) global.userProfileCache[chatId] = { data: user, time: Date.now() };
   sendAdminLog(`🚀 CLICK START\n\n👤 ${msg.from.first_name || "-"}\n📛 @${msg.from.username || "sin_username"}\n🆔 ${chatId}`).catch(() => {});
 
   // GATE de canal: solo se aplica si CHANNEL_URL está configurado en el .env
   const gateLang = (user && user.language) ? user.language : ((msg.from.language_code || "en").startsWith("ar") ? "ar" : "en");
-  if (!(await isUserInChannel(chatId))) {
+  if (!(await channelPromise)) {
     return showJoinChannelGate(chatId, gateLang, null);
   }
 
   // Usuario nuevo o sin idioma -> mostrar selector (ahi se crea/guarda en Supabase)
   if (!user || !user.language) return showLangSelection(chatId, null);
-  return showHome(chatId, null);
+  return showHome(chatId, null, user);
 });
 
 // ============================================================
