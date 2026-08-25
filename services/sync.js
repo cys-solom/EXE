@@ -9,14 +9,23 @@ const { fetchKokoroProducts, defaultProviderFromEnv } = require("./kokoroApi.js"
 
 const SYNC_MINUTES = Number(process.env.SYNC_INTERVAL_MINUTES || 5);
 
+function defaultProviderFallback(reason) {
+  const def = defaultProviderFromEnv();
+  if (!def.api_key) return [];
+  if (reason) console.warn(`[SYNC] Usando proveedor default de .env: ${reason}`);
+  return [{ ...def, id: null, active: true, is_default: true }];
+}
+
 // Devuelve los proveedores activos. Si no hay ninguno en la tabla todavia,
 // crea automaticamente el proveedor "default" con los valores del .env
 // (asi el bot sigue funcionando igual que antes sin configuracion extra).
 async function getActiveProviders(supabase) {
-  const { data: existing } = await supabase.from("api_providers").select("*").eq("active", true);
+  const { data: existing, error: existingErr } = await supabase.from("api_providers").select("*").eq("active", true);
+  if (existingErr) return defaultProviderFallback(existingErr.message);
   if (existing && existing.length) return existing;
 
-  const { data: anyRow } = await supabase.from("api_providers").select("id").limit(1);
+  const { data: anyRow, error: anyErr } = await supabase.from("api_providers").select("id").limit(1);
+  if (anyErr) return defaultProviderFallback(anyErr.message);
   if (anyRow && anyRow.length) return []; // hay proveedores pero ninguno activo: respeta esa decision
 
   const def = defaultProviderFromEnv();
@@ -27,10 +36,11 @@ async function getActiveProviders(supabase) {
   }).select().single();
   if (error) {
     // Otro proceso ya lo creo en paralelo (choque con el indice unico de is_default): releer.
-    const { data: race } = await supabase.from("api_providers").select("*").eq("active", true);
+    const { data: race, error: raceErr } = await supabase.from("api_providers").select("*").eq("active", true);
     if (race && race.length) return race;
+    if (raceErr) return defaultProviderFallback(raceErr.message);
     console.error("[SYNC] No se pudo crear el proveedor default:", error.message);
-    return [];
+    return defaultProviderFallback(error.message);
   }
   return [created];
 }
