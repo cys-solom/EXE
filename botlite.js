@@ -40,7 +40,7 @@ const WEBHOOK_BASE_URL = normalizePublicUrl(
   process.env.PUBLIC_URL ||
   process.env.RAILWAY_PUBLIC_DOMAIN
 );
-const USE_WEBHOOK = Boolean(process.env.PORT && WEBHOOK_BASE_URL && process.env.DISABLE_WEBHOOK !== "true");
+const USE_WEBHOOK = Boolean(process.env.PORT && WEBHOOK_BASE_URL && process.env.FORCE_WEBHOOK === "true");
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, USE_WEBHOOK
   ? { webHook: { host: "0.0.0.0", port: Number(process.env.PORT), healthEndpoint: "/healthz" } }
@@ -964,7 +964,7 @@ async function getShopProducts() {
       description_es: p.description_es, description_en: p.description_en
     });
   }
-  global.productsCache = { data: out, time: Date.now() };
+  if (out.length) global.productsCache = { data: out, time: Date.now() };
   return out;
 }
 function sess(chatId) { global.sessions[chatId] = global.sessions[chatId] || {}; return global.sessions[chatId]; }
@@ -2449,6 +2449,7 @@ if (USE_WEBHOOK) {
     .then(() => console.log(`[WEBHOOK] Activo en ${WEBHOOK_BASE_URL}/<token> (health: /healthz)`))
     .catch(e => console.error("[WEBHOOK] No se pudo activar:", e.message));
 } else if (process.env.PORT) {
+  bot.deleteWebHook().catch(() => {});
   require("http").createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end(`${SHOP_NAME} bot esta corriendo en polling.`);
