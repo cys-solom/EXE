@@ -83,9 +83,16 @@ function requireAuth(handler) {
     } catch (err) {
       console.error("[ADMIN API]", err);
       if (!res.writableEnded) {
+        const detail = err.message || String(err);
+        const hint = detail.includes("database connection string")
+          ? "ضع SUPABASE_URL كرابط Project API وليس DATABASE_URL. الشكل الصحيح: https://PROJECT.supabase.co"
+          : detail.includes("Supabase connection failed")
+            ? "السيرفر لا يستطيع الوصول إلى Supabase. افتح /api/health وتأكد من supabase.connection، وراجع أن مشروع Supabase غير متوقف وأن SUPABASE_URL صحيح."
+            : null;
         res.status(500).json({
           error: "تعذر الاتصال بخدمات لوحة التحكم. راجع إعدادات Supabase أو الشبكة.",
-          detail: err.message || String(err)
+          detail,
+          hint
         });
       }
     }

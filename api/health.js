@@ -1,4 +1,4 @@
-const { getSupabaseStatus } = require("./_lib/supabase.js");
+const { getSupabaseStatus, checkSupabaseConnection } = require("./_lib/supabase.js");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -6,9 +6,15 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: "method not allowed" });
   }
 
+  const supabase = getSupabaseStatus();
+  const connection = await checkSupabaseConnection();
+
   return res.status(200).json({
     ok: true,
-    supabase: getSupabaseStatus(),
+    supabase: {
+      ...supabase,
+      connection
+    },
     admin: {
       hasUser: !!process.env.ADMIN_PANEL_USER,
       hasPassword: !!process.env.ADMIN_PANEL_PASSWORD,

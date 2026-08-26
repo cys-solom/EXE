@@ -14,15 +14,30 @@ function getSupabaseConfig() {
   return { url, key };
 }
 
+function validateSupabaseUrl(url) {
+  if (!url) return "SUPABASE_URL is missing";
+  if (/^postgres(ql)?:\/\//i.test(url)) return "SUPABASE_URL is a database connection string. Use the Supabase Project URL: https://PROJECT.supabase.co";
+  if (!/^https:\/\//i.test(url)) return "SUPABASE_URL must start with https://";
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.includes("supabase")) return "SUPABASE_URL does not look like a Supabase project URL";
+  } catch (e) {
+    return "SUPABASE_URL is not a valid URL";
+  }
+  return null;
+}
+
 function getSupabaseStatus() {
   const { url, key } = getSupabaseConfig();
   let host = "";
   try { host = url ? new URL(url).host : ""; } catch (e) {}
+  const urlIssue = validateSupabaseUrl(url);
   return {
     configured: !!(url && key),
     hasUrl: !!url,
     hasKey: !!key,
     host,
+    urlIssue,
     timeoutMs: SUPABASE_TIMEOUT_MS
   };
 }
@@ -44,12 +59,44 @@ async function supabaseFetch(url, options = {}) {
   }
 }
 
+async function checkSupabaseConnection() {
+  const { url, key } = getSupabaseConfig();
+  const urlIssue = validateSupabaseUrl(url);
+  if (urlIssue) return { ok: false, stage: "config", error: urlIssue };
+  if (!key) return { ok: false, stage: "config", error: "Supabase key is missing" };
+  const endpoint = `${url.replace(/\/+$/, "")}/rest/v1/`;
+  try {
+    const started = Date.now();
+    const response = await supabaseFetch(endpoint, {
+      method: "GET",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`
+      }
+    });
+    return {
+      ok: response.status < 500,
+      stage: "network",
+      status: response.status,
+      latencyMs: Date.now() - started
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      stage: "network",
+      error: err.message || String(err)
+    };
+  }
+}
+
 function getSupabase() {
   if (!client) {
     const { url, key } = getSupabaseConfig();
     if (!url || !key) {
       throw new Error("Supabase env missing. Set SUPABASE_URL and SUPABASE_KEY or SUPABASE_SERVICE_ROLE_KEY.");
     }
+    const urlIssue = validateSupabaseUrl(url);
+    if (urlIssue) throw new Error(urlIssue);
     client = createClient(url, key, {
       global: { fetch: supabaseFetch },
       auth: { persistSession: false }
@@ -58,4 +105,4 @@ function getSupabase() {
   return client;
 }
 
-module.exports = { getSupabase, getSupabaseStatus };
+module.exports = { getSupabase, getSupabaseStatus, checkSupabaseConnection };
