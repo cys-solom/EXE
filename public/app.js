@@ -43,14 +43,19 @@ async function api(path, opts = {}) {
     const cached = apiCache.get(cacheKey);
     if (cached && now - cached.t < API_CACHE_MS) return cached.v;
   }
-  const res = await fetch(`/api/${path}`, {
-    method,
-    headers: opts.body ? { "Content-Type": "application/json" } : undefined,
-    body: opts.body ? JSON.stringify(opts.body) : undefined
-  });
+  let res;
+  try {
+    res = await fetch(`/api/${path}`, {
+      method,
+      headers: opts.body ? { "Content-Type": "application/json" } : undefined,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+  } catch (err) {
+    throw new Error("تعذر الوصول لسيرفر لوحة التحكم. تأكد أن الاستضافة شغالة وأن رابط /api يعمل.");
+  }
   let json = {};
   try { json = await res.json(); } catch (e) {}
-  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(json.detail || json.error || `HTTP ${res.status}`);
   if (method === "GET") apiCache.set(cacheKey, { t: now, v: json });
   else apiCache.clear();
   return json;

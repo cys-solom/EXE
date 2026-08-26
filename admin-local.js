@@ -68,6 +68,9 @@ async function handleApi(req, res, url) {
 
   try {
     delete require.cache[require.resolve(apiFile)];
+    for (const key of Object.keys(require.cache)) {
+      if (key.startsWith(path.join(API_DIR, "_lib") + path.sep)) delete require.cache[key];
+    }
     const handler = require(apiFile);
     await handler(req, res);
     if (!res.writableEnded) res.end();

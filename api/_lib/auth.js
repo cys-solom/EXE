@@ -74,11 +74,21 @@ function isAuthed(req) {
 // Envuelve un handler para exigir sesion valida antes de ejecutarlo.
 function requireAuth(handler) {
   return async (req, res) => {
-    if (!isAuthed(req)) {
-      res.status(401).json({ error: "unauthorized" });
-      return;
+    try {
+      if (!isAuthed(req)) {
+        res.status(401).json({ error: "unauthorized" });
+        return;
+      }
+      return await handler(req, res);
+    } catch (err) {
+      console.error("[ADMIN API]", err);
+      if (!res.writableEnded) {
+        res.status(500).json({
+          error: "تعذر الاتصال بخدمات لوحة التحكم. راجع إعدادات Supabase أو الشبكة.",
+          detail: err.message || String(err)
+        });
+      }
     }
-    return handler(req, res);
   };
 }
 
