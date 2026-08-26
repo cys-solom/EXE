@@ -39,6 +39,7 @@
   <symbol id="ic-x" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5 5 19"/></symbol>
   <symbol id="ic-stock" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-7 4 4"/><path d="M17 6h4v4"/></symbol>
   <symbol id="ic-support" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M5.6 5.6l3.3 3.3M18.4 5.6l-3.3 3.3M5.6 18.4l3.3-3.3M18.4 18.4l-3.3-3.3"/></symbol>
+  <symbol id="ic-gift" viewBox="0 0 24 24"><rect x="3.5" y="9" width="17" height="11" rx="2"/><path d="M3.5 13h17M12 9v11M7.5 6.5C7.5 5.1 8.6 4 10 4c1.4 0 2 1.2 2 3v2H9.5a2 2 0 0 1-2-2.5ZM16.5 6.5C16.5 5.1 15.4 4 14 4c-1.4 0-2 1.2-2 3v2h2.5a2 2 0 0 0 2-2.5Z"/></symbol>
   <symbol id="ic-empty" viewBox="0 0 24 24"><path d="M3 8.5 12 4l9 4.5-9 4.5-9-4.5Z"/><path d="M3 8.5V16l9 4.5 9-4.5V8.5"/></symbol>
 </svg>
 
@@ -82,6 +83,7 @@
       <button class="nav-item" data-tab="users"><svg class="icon nav-ic"><use href="#ic-users"/></svg> المستخدمين</button>
       <button class="nav-item" data-tab="orders"><svg class="icon nav-ic"><use href="#ic-receipt"/></svg> الطلبات</button>
       <button class="nav-item" data-tab="transactions"><svg class="icon nav-ic"><use href="#ic-card"/></svg> المعاملات</button>
+      <button class="nav-item" data-tab="compensations"><svg class="icon nav-ic"><use href="#ic-gift"/></svg> التعويضات</button>
       <button class="nav-item" data-tab="broadcast"><svg class="icon nav-ic"><use href="#ic-send"/></svg> بث رسالة</button>
     </nav>
     <div class="sidebar-spacer"></div>
@@ -171,6 +173,8 @@
     <section id="tab-manual" class="tab">
       <div class="toolbar">
         <button id="addManualBtn" class="btn btn-primary"><svg class="icon"><use href="#ic-plus"/></svg> منتج جديد</button>
+        <div class="toolbar-spacer"></div>
+        <a class="btn btn-sm" href="/api/products-manual?format=csv" target="_blank"><svg class="icon icon-sm"><use href="#ic-download"/></svg> تصدير CSV</a>
       </div>
       <div id="manualGrid" class="card-grid"></div>
     </section>
@@ -211,6 +215,21 @@
       </div>
       <div class="table-wrap"><table id="transactionsTable"><thead><tr>
         <th>العميل</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th>
+      </tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="tab-compensations" class="tab">
+      <div class="toolbar">
+        <button id="addCompensationBtn" class="btn btn-primary"><svg class="icon"><use href="#ic-gift"/></svg> تعويض جديد</button>
+        <input type="text" id="compensationsSearch" placeholder="ابحث بالـ ID أو سبب التعويض...">
+        <div class="toolbar-spacer"></div>
+        <a id="compensationsExport" class="btn btn-sm" href="/api/compensations?format=csv" target="_blank"><svg class="icon icon-sm"><use href="#ic-download"/></svg> تصدير CSV</a>
+      </div>
+      <div class="ops-strip">
+        <div><b>نظام التعويضات</b><span>إضافة رصيد للعميل، تسجيل العملية في المعاملات، وإرسال إشعار تلقائي.</span></div>
+      </div>
+      <div class="table-wrap"><table id="compensationsTable"><thead><tr>
+        <th>العميل</th><th>المبلغ</th><th>السبب</th><th>التاريخ</th>
       </tr></thead><tbody></tbody></table></div>
     </section>
 

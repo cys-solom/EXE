@@ -19,12 +19,15 @@ module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
   const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
 
-  const [usersRes, ordersRes, deliveredRes, productsRes, pendingRes, statusCounts, providers] = await Promise.all([
+  const [usersRes, ordersRes, deliveredRes, productsRes, pendingRes, openTicketsRes, manualProductsRes, compensationRes, statusCounts, providers] = await Promise.all([
     supabase.from("users").select("*", { count: "exact", head: true }),
     supabase.from("orders").select("*", { count: "exact", head: true }),
     supabase.from("orders").select("total, product_name, telegram_id, created_at").eq("status", "delivered").gte("created_at", since),
     supabase.from("products").select("*", { count: "exact", head: true }).eq("enabled", true),
     supabase.from("orders").select("*", { count: "exact", head: true }).eq("status", "paid"),
+    supabase.from("support_tickets").select("*", { count: "exact", head: true }).eq("status", "open"),
+    supabase.from("products_manual").select("id, name"),
+    supabase.from("transactions").select("amount").eq("type", "compensation").gte("created_at", since),
     Promise.all(["processing", "paid", "delivered", "cancelled"].map(s =>
       supabase.from("orders").select("*", { count: "exact", head: true }).eq("status", s).then(r => [s, r.count || 0])
     )),
@@ -84,6 +87,17 @@ module.exports = requireAuth(async (req, res) => {
   const kokoroBalance = knownBalances.length ? knownBalances.reduce((s, p) => s + p.balance, 0) : null;
   const kokoroLow = knownBalances.some(p => p.balance < LOW_BALANCE_THRESHOLD);
   const kokoroError = providerBalances.length === 1 && providerBalances[0].error ? providerBalances[0].error : null;
+  let lowManualStock = 0;
+  const manualIds = (manualProductsRes.data || []).map(p => p.id);
+  if (manualIds.length) {
+    const { data: stockRows } = await supabase.from("stock_manual").select("product_id, is_sold").in("product_id", manualIds);
+    const stockByProduct = {};
+    (stockRows || []).forEach(r => {
+      if (!r.is_sold) stockByProduct[r.product_id] = (stockByProduct[r.product_id] || 0) + 1;
+    });
+    lowManualStock = manualIds.filter(id => Number(stockByProduct[id] || 0) <= 3).length;
+  }
+  const compensationTotal = (compensationRes.data || []).reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
   return res.status(200).json({
     usersCount: usersRes.count || 0,
@@ -91,6 +105,9 @@ module.exports = requireAuth(async (req, res) => {
     revenue,
     activeProducts: productsRes.count || 0,
     pendingDeliveries: pendingRes.count || 0,
+    openTickets: openTicketsRes.count || 0,
+    lowManualStock,
+    compensationTotal,
     kokoroBalance,
     kokoroLow,
     kokoroError,

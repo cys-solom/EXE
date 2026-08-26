@@ -211,6 +211,12 @@ body {
 .toolbar input:focus, .toolbar select:focus { outline: none; border-color: var(--primary); }
 .toolbar-spacer { flex: 1; }
 .section-hint { color: var(--text-muted); font-size: 13px; margin: -6px 0 14px; }
+.ops-strip {
+  margin: 0 0 14px; padding: 13px 15px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-elev); display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.ops-strip b { display: block; font-size: 13.5px; margin-bottom: 3px; }
+.ops-strip span { display: block; color: var(--text-muted); font-size: 12.5px; }
 
 /* Barra de acciones en lote */
 .bulk-bar {
@@ -304,6 +310,8 @@ td input[type="number"], td input[type="text"] {
 }
 .modal-body input:focus, .modal-body textarea:focus, .modal-body select:focus { outline: none; border-color: var(--primary); }
 .modal-body textarea { min-height: 90px; resize: vertical; }
+.check-row { display: inline-flex !important; align-items: center; gap: 8px; color: var(--text) !important; }
+.check-row input { width: auto !important; }
 .upload-txt-label {
   display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--primary) !important;
   font-weight: 600; margin-top: -4px;

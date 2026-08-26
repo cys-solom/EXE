@@ -3,6 +3,7 @@ const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
 const { announceStock } = require("./_lib/announce.js");
 const { logActivity } = require("./_lib/activity.js");
+const { toCsv, sendCsv } = require("./_lib/csv.js");
 
 module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
@@ -21,6 +22,18 @@ module.exports = requireAuth(async (req, res) => {
       });
     }
     const products = (data || []).map(p => ({ ...p, stock: stockCounts[p.id] || 0 }));
+    if (req.query.format === "csv") {
+      const csv = toCsv(products, [
+        { label: "ID", value: "id" },
+        { label: "Name", value: "name" },
+        { label: "Price", value: "price" },
+        { label: "Min Order", value: "min_order" },
+        { label: "Stock", value: "stock" },
+        { label: "Enabled", value: "enabled" },
+        { label: "Created", value: "created_at" }
+      ]);
+      return sendCsv(res, "manual-products.csv", csv);
+    }
     return res.status(200).json({ products });
   }
 

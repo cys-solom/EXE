@@ -2,6 +2,7 @@
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
 const { logActivity } = require("./_lib/activity.js");
+const { toCsv, sendCsv } = require("./_lib/csv.js");
 
 module.exports = requireAuth(async (req, res) => {
   const supabase = getSupabase();
@@ -9,6 +10,21 @@ module.exports = requireAuth(async (req, res) => {
   if (req.method === "GET") {
     const { data, error } = await supabase.from("products").select("*").order("name");
     if (error) return res.status(500).json({ error: error.message });
+    if (req.query.format === "csv") {
+      const csv = toCsv(data || [], [
+        { label: "ID", value: "id" },
+        { label: "Provider", value: "provider_id" },
+        { label: "Name", value: "name" },
+        { label: "Display Name", value: "custom_name" },
+        { label: "Base Price", value: "price" },
+        { label: "Markup", value: "markup" },
+        { label: "Markup Type", value: "markup_type" },
+        { label: "Stock", value: "stock" },
+        { label: "Enabled", value: "enabled" },
+        { label: "Updated", value: "updated_at" }
+      ]);
+      return sendCsv(res, "kokoro-products.csv", csv);
+    }
     return res.status(200).json({ products: data });
   }
 

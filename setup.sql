@@ -178,7 +178,7 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS kokoro_order_id  TEXT;
 CREATE TABLE IF NOT EXISTS transactions (
   id            BIGSERIAL PRIMARY KEY,
   telegram_id   BIGINT,
-  type          TEXT,                             -- deposit | purchase | manual_adjust
+  type          TEXT,                             -- deposit | purchase | manual_adjust | compensation
   amount        NUMERIC(12,2) DEFAULT 0,          -- + recarga / - compra
   description   TEXT,
   created_at    TIMESTAMPTZ DEFAULT now()

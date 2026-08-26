@@ -2,12 +2,13 @@
 //  لوحة تحكم المتجر — واجهة (SPA بدون مكتبات خارجية)
 // ============================================================
 const STATUS_LABELS = { processing: "قيد المعالجة", paid: "مدفوع", delivered: "تم التسليم", cancelled: "ملغي" };
+const TX_LABELS = { deposit: "إيداع", purchase: "شراء", manual_adjust: "تعديل يدوي", compensation: "تعويض" };
 const STATUS_BADGE = { processing: "badge-blue", paid: "badge-yellow", delivered: "badge-green", cancelled: "badge-red" };
 const STATUS_COLOR = { processing: "var(--primary)", paid: "var(--warning)", delivered: "var(--success)", cancelled: "var(--danger)" };
 const ACTIVITY_ICONS = {
   product_toggle: "🔁", product_update: "✏️", manual_product_create: "🆕", manual_product_update: "✏️",
   manual_product_delete: "🗑️", stock_add: "📦", stock_delete: "🗑️", balance_adjust: "💰",
-  order_deliver: "✅", order_cancel: "❌", email_activation_add: "📧", email_activation_remove: "📧",
+  compensation_create: "🎁", order_deliver: "✅", order_cancel: "❌", email_activation_add: "📧", email_activation_remove: "📧",
   broadcast_single: "📣", broadcast_all: "📣"
 };
 
@@ -113,6 +114,7 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
 const TAB_TITLES = {
   dashboard: "لوحة التحكم", activity: "سجل النشاط", broadcast: "بث رسالة", products: "منتجات KOKORO",
   manual: "منتجاتي اليدوية", users: "المستخدمين", orders: "الطلبات", transactions: "المعاملات",
+  compensations: "التعويضات",
   activation: "التفعيل بالبريد", tickets: "الشكاوى", providers: "مزوّدي API"
 };
 let currentTab = "dashboard";
@@ -135,7 +137,8 @@ document.getElementById("refreshBtn").addEventListener("click", () => loadTab(cu
 function loadTab(tab) {
   const loaders = {
     dashboard: loadDashboard, activity: loadActivity, broadcast: () => {}, products: loadProducts, manual: loadManual,
-    users: loadUsers, orders: loadOrders, transactions: loadTransactions, activation: loadActivation, tickets: loadTickets,
+    users: loadUsers, orders: loadOrders, transactions: loadTransactions, compensations: loadCompensations,
+    activation: loadActivation, tickets: loadTickets,
     providers: loadProviders
   };
   (loaders[tab] || (() => {}))();
@@ -188,12 +191,15 @@ async function openTicketDetail(id) {
       <label>الرد على العميل (اختياري، بيتبعتله على تليجرام)</label>
       <textarea id="tk_reply" placeholder="اكتب ردك هنا..."></textarea>
       <div class="modal-actions">
+        <button class="btn btn-success" id="tk_compensate">تعويض</button>
         <button class="btn" id="tk_close_only">إغلاق بدون رد</button>
         <button class="btn btn-primary" id="tk_reply_close">إرسال الرد وإغلاق</button>
       </div>` : `<div class="modal-actions"><button class="btn" id="tk_ok">تمام</button></div>`}
     `;
     const okBtn = document.getElementById("tk_ok");
     if (okBtn) okBtn.addEventListener("click", closeModal);
+    const compensateBtn = document.getElementById("tk_compensate");
+    if (compensateBtn) compensateBtn.addEventListener("click", () => openCompensationModal({ telegram_id: t.telegram_id, order_id: t.order_id, reason: `تعويض عن تذكرة #${t.id}` }));
     const closeOnlyBtn = document.getElementById("tk_close_only");
     if (closeOnlyBtn) closeOnlyBtn.addEventListener("click", async () => {
       try { await api("tickets", { method: "PATCH", body: { id, close: true } }); toast("تم إغلاق التذكرة ✅"); closeModal(); loadTickets(); }
@@ -303,7 +309,7 @@ function bindProviderForm(id) {
 // ---------- Dashboard ----------
 async function loadDashboard() {
   const grid = document.getElementById("dashboardStats");
-  grid.innerHTML = Array.from({ length: 6 }).map(() => `<div class="stat-card"><span class="skel" style="width:60%"></span><span class="skel" style="height:22px;margin-top:6px"></span></div>`).join("");
+  grid.innerHTML = Array.from({ length: 9 }).map(() => `<div class="stat-card"><span class="skel" style="width:60%"></span><span class="skel" style="height:22px;margin-top:6px"></span></div>`).join("");
   try {
     const d = await api("dashboard");
     grid.innerHTML = `
@@ -313,6 +319,9 @@ async function loadDashboard() {
       <div class="stat-card success"><div class="stat-top"><div class="label">الإيرادات (٩٠ يوم)</div><div class="stat-icon">${ic("wallet")}</div></div><div class="value">${money(d.revenue)} USDT</div></div>
       <div class="stat-card"><div class="stat-top"><div class="label">المنتجات المفعّلة</div><div class="stat-icon">${ic("box")}</div></div><div class="value">${d.activeProducts}</div></div>
       <div class="stat-card ${d.pendingDeliveries > 0 ? "warn" : ""}"><div class="stat-top"><div class="label">بانتظار تسليم يدوي</div><div class="stat-icon">${ic("clock")}</div></div><div class="value">${d.pendingDeliveries}</div></div>
+      <div class="stat-card ${d.openTickets > 0 ? "danger" : ""}"><div class="stat-top"><div class="label">شكاوى مفتوحة</div><div class="stat-icon">${ic("support")}</div></div><div class="value">${d.openTickets || 0}</div></div>
+      <div class="stat-card ${d.lowManualStock > 0 ? "warn" : ""}"><div class="stat-top"><div class="label">مخزون يدوي منخفض</div><div class="stat-icon">${ic("warning")}</div></div><div class="value">${d.lowManualStock || 0}</div></div>
+      <div class="stat-card"><div class="stat-top"><div class="label">تعويضات (٩٠ يوم)</div><div class="stat-icon">${ic("gift")}</div></div><div class="value">${money(d.compensationTotal || 0)} USDT</div></div>
     `;
     renderRevenueChart(d.chart || []);
     renderStatusBreakdown(d.statusCounts || {});
@@ -813,11 +822,13 @@ async function openUserDetail(id) {
       <table class="mini-table"><thead><tr><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th></tr></thead><tbody>${txRows}</tbody></table>
       <div class="modal-actions">
         <button class="btn" id="ud_close">إغلاق</button>
+        <button class="btn btn-success" id="ud_compensate">تعويض</button>
         <button class="btn btn-primary" id="ud_adjust">تعديل الرصيد</button>
       </div>
     `;
     document.getElementById("ud_close").addEventListener("click", closeModal);
     document.getElementById("ud_adjust").addEventListener("click", () => openAdjustModal(id));
+    document.getElementById("ud_compensate").addEventListener("click", () => openCompensationModal({ telegram_id: id }));
   } catch (e) { modalBody.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
 }
 
@@ -910,10 +921,12 @@ async function openOrderDetail(id) {
       ${o.delivery_message ? `<div class="detail-block">${esc(o.delivery_message)}</div>` : `<div class="muted" style="font-size:13px">لا يوجد محتوى تسليم مسجّل.</div>`}
       <div class="modal-actions">
         <button class="btn" id="od_close">إغلاق</button>
+        <button class="btn btn-success" id="od_compensate">تعويض العميل</button>
         ${o.status === "paid" ? `<button class="btn btn-primary" id="od_deliver">تسليم</button>` : ""}
       </div>
     `;
     document.getElementById("od_close").addEventListener("click", closeModal);
+    document.getElementById("od_compensate").addEventListener("click", () => openCompensationModal({ telegram_id: o.telegram_id, order_id: o.id, amount: o.total, reason: `تعويض عن الطلب ${orderCode(o)}` }));
     const dBtn = document.getElementById("od_deliver");
     if (dBtn) dBtn.addEventListener("click", () => openDeliverModal(id));
   } catch (e) { modalBody.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
@@ -928,13 +941,82 @@ async function loadTransactions() {
     if (!transactions.length) { tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">لا توجد معاملات.</div></td></tr>`; return; }
     tbody.innerHTML = transactions.map(t => `<tr>
       <td>${t.telegram_id}</td>
-      <td>${esc(t.type)}</td>
+      <td>${esc(TX_LABELS[t.type] || t.type)}</td>
       <td style="color:${Number(t.amount) < 0 ? "var(--danger)" : "var(--success)"}">${Number(t.amount) > 0 ? "+" : ""}${money(t.amount)}</td>
       <td>${esc(t.description || "-")}</td>
       <td>${fmtDate(t.created_at)}</td>
     </tr>`).join("");
   } catch (e) { tbody.innerHTML = `<tr><td colspan="5">${esc(e.message)}</td></tr>`; }
 }
+
+// ---------- Compensations ----------
+let compensationsDebounce;
+async function loadCompensations() {
+  const tbody = document.querySelector("#compensationsTable tbody");
+  tbody.innerHTML = skeletonRows(4);
+  const q = document.getElementById("compensationsSearch").value.trim();
+  document.getElementById("compensationsExport").href = `/api/compensations?format=csv${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+  try {
+    const { compensations } = await api(`compensations${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+    if (!compensations.length) { tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state">لا توجد تعويضات مسجلة.</div></td></tr>`; return; }
+    tbody.innerHTML = compensations.map(c => `<tr>
+      <td>${c.telegram_id}</td>
+      <td style="color:var(--success);font-weight:700">+${money(c.amount)} USDT</td>
+      <td>${esc(c.description || "-")}</td>
+      <td>${fmtDate(c.created_at)}</td>
+    </tr>`).join("");
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="4">${esc(e.message)}</td></tr>`; }
+}
+
+function openCompensationModal(seed = {}) {
+  openModal("تعويض عميل", `
+    <div class="field-row">
+      <div>
+        <label>ID العميل</label>
+        <input id="cp_user" type="number" value="${seed.telegram_id ? esc(seed.telegram_id) : ""}" placeholder="123456789">
+      </div>
+      <div>
+        <label>المبلغ USDT</label>
+        <input id="cp_amount" type="number" min="0.01" step="0.01" value="${seed.amount ? money(seed.amount) : ""}" placeholder="1.00">
+      </div>
+    </div>
+    <label>رقم الطلب اختياري</label>
+    <input id="cp_order" type="number" value="${seed.order_id ? esc(seed.order_id) : ""}" placeholder="اتركه فارغًا لو التعويض عام">
+    <label>سبب التعويض</label>
+    <textarea id="cp_reason" placeholder="مثال: تأخير تسليم، كود غير صالح، تعويض دعم...">${seed.reason ? esc(seed.reason) : ""}</textarea>
+    <label class="check-row"><input id="cp_notify" type="checkbox" checked> إرسال إشعار للعميل</label>
+    <div class="modal-actions">
+      <button class="btn" id="cp_cancel">إلغاء</button>
+      <button class="btn btn-primary" id="cp_save"><svg class="icon"><use href="#ic-gift"/></svg> إضافة التعويض</button>
+    </div>
+  `);
+  document.getElementById("cp_cancel").addEventListener("click", closeModal);
+  document.getElementById("cp_save").addEventListener("click", async () => {
+    const body = {
+      telegram_id: document.getElementById("cp_user").value.trim(),
+      amount: document.getElementById("cp_amount").value,
+      order_id: document.getElementById("cp_order").value.trim() || undefined,
+      reason: document.getElementById("cp_reason").value.trim(),
+      notify: document.getElementById("cp_notify").checked
+    };
+    if (!body.telegram_id || !body.amount || Number(body.amount) <= 0) { toast("أدخل العميل والمبلغ بشكل صحيح", "error"); return; }
+    try {
+      const r = await api("compensations", { method: "POST", body });
+      toast(r.notified ? "تم التعويض وإشعار العميل ✅" : "تم التعويض، لكن الإشعار لم يصل ⚠️", r.notified ? "success" : "error");
+      closeModal();
+      loadCompensations();
+      loadDashboard();
+      loadUsers();
+      loadTransactions();
+    } catch (err) { toast(err.message, "error"); }
+  });
+}
+
+document.getElementById("addCompensationBtn").addEventListener("click", () => openCompensationModal());
+document.getElementById("compensationsSearch").addEventListener("input", () => {
+  clearTimeout(compensationsDebounce);
+  compensationsDebounce = setTimeout(loadCompensations, 350);
+});
 
 // ---------- Email activation list ----------
 async function loadActivation() {
