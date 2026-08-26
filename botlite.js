@@ -82,6 +82,7 @@ global.userProfileCache = {};
 global.productsCache = { data: null, time: 0 };
 global.productsRefreshPromise = null;
 global.channelMemberCache = {};
+global.userRecordSynced = {};
 
 const USER_CACHE_MS = Number(process.env.USER_CACHE_MS || 15000);
 const PRODUCTS_CACHE_MS = Number(process.env.PRODUCTS_CACHE_MS || 15000);
@@ -843,10 +844,32 @@ async function syncUsername(chatId, from) {
     if (!chatId || !from) return;
     const live = from.username || null;
     global.usernames[chatId] = from.username || "sin_username";
-    if (!live) return;
-    if (global.usernameSynced[chatId] === live) return;
-    const { data: user } = await supabase.from("users").select("username").eq("id", chatId).maybeSingle();
-    if (user && user.username !== live) await supabase.from("users").update({ username: live }).eq("id", chatId);
+    const now = Date.now();
+    const detectedLang = String(from.language_code || "").startsWith("en") ? "en" : "ar";
+    const syncKey = `${live || ""}:${detectedLang}`;
+    if (global.userRecordSynced[chatId]?.key === syncKey && now - global.userRecordSynced[chatId].time < 60000) return;
+    global.userRecordSynced[chatId] = { key: syncKey, time: now };
+
+    const { data: user, error } = await supabase.from("users").select("id, username, language, balance").eq("id", chatId).maybeSingle();
+    if (error) {
+      console.warn("[USER SYNC] lookup failed:", error.message);
+      return;
+    }
+    if (!user) {
+      const { error: insertErr } = await supabase.from("users").insert({
+        id: chatId,
+        username: live,
+        language: detectedLang,
+        balance: 0
+      });
+      if (insertErr && insertErr.code !== "23505") console.warn("[USER SYNC] insert failed:", insertErr.message);
+      else {
+        global.userProfileCache[chatId] = { data: { id: chatId, username: live, language: detectedLang, balance: 0 }, time: Date.now() };
+        sendAdminLog(`😍 NUEVO USUARIO REGISTRADO\n\n👤 ${from.first_name || "-"}\n📛 @${from.username || "sin_username"}\n🆔 ${chatId}`).catch(() => {});
+      }
+      return;
+    }
+    if (live && user.username !== live) await supabase.from("users").update({ username: live }).eq("id", chatId);
     global.usernameSynced[chatId] = live;
   } catch (e) {}
 }
