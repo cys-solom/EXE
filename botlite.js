@@ -998,9 +998,23 @@ function nextBulkHint(p, qty, t) {
 
 async function fetchShopProductsFresh() {
   const out = [];
+  const fetchApiProducts = async () => {
+    let result = await supabase.from("products").select("*").gt("stock", 0).order("sort_order", { ascending: false }).order("name");
+    if (result.error && /sort_order/i.test(result.error.message || "")) {
+      result = await supabase.from("products").select("*").gt("stock", 0).order("name");
+    }
+    return result;
+  };
+  const fetchManualProducts = async () => {
+    let result = await supabase.from("products_manual").select("*").eq("enabled", true).order("sort_order", { ascending: false }).order("name");
+    if (result.error && /sort_order/i.test(result.error.message || "")) {
+      result = await supabase.from("products_manual").select("*").eq("enabled", true).order("name");
+    }
+    return result;
+  };
   const [{ data: apiProds, error: apiErr }, { data: manProds, error: manErr }] = await Promise.all([
-    supabase.from("products").select("*").gt("stock", 0).order("name"),
-    supabase.from("products_manual").select("*").eq("enabled", true).order("name")
+    fetchApiProducts(),
+    fetchManualProducts()
   ]);
   if (apiErr) console.error("[SHOP] products query error:", apiErr.message);
   if (manErr) console.error("[SHOP] products_manual query error:", manErr.message);

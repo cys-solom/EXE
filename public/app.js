@@ -30,6 +30,8 @@ const ACTIVITY_ICONS = {
 
 let currentProducts = []; // كاش لآخر منتجات KOKORO محمّلة
 let selectedProductIds = new Set();
+let currentManualProducts = [];
+let selectedManualIds = new Set();
 const apiCache = new Map();
 const API_CACHE_MS = 15000;
 let adminLang = localStorage.getItem("adminLang") || "ar";
@@ -71,6 +73,10 @@ function toast(msg, type = "success") {
   stack.appendChild(el);
   setTimeout(() => el.remove(), 3400);
   while (stack.children.length > 4) stack.removeChild(stack.firstChild);
+}
+
+function showApiWarning(r) {
+  if (r && r.warning) toast(r.warning, "error");
 }
 
 function esc(s) {
@@ -530,26 +536,27 @@ document.getElementById("bcSendBtn").addEventListener("click", async () => {
 // ---------- Products (KOKORO) ----------
 async function loadProducts() {
   const tbody = document.querySelector("#productsTable tbody");
-  tbody.innerHTML = skeletonRows(10);
+  tbody.innerHTML = skeletonRows(11);
   selectedProductIds.clear();
   updateProductsBulkBar();
   try {
     const { products } = await api("products");
     currentProducts = products || [];
     renderProducts();
-  } catch (e) { tbody.innerHTML = `<tr><td colspan="10">${esc(e.message)}</td></tr>`; }
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="11">${esc(e.message)}</td></tr>`; }
 }
 function renderProducts() {
   const q = document.getElementById("productsSearch").value.trim().toLowerCase();
   const tbody = document.querySelector("#productsTable tbody");
   const rows = currentProducts.filter(p => !q || p.name.toLowerCase().includes(q) || (p.custom_name || "").toLowerCase().includes(q));
-  if (!rows.length) { tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state">لا توجد منتجات.</div></td></tr>`; return; }
+  if (!rows.length) { tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state">لا توجد منتجات.</div></td></tr>`; return; }
   tbody.innerHTML = rows.map(p => {
     const isFixed = p.markup_type === "fixed";
     const clientPrice = isFixed ? Number(p.price || 0) + Number(p.markup || 0) : Number(p.price || 0) * (1 + Number(p.markup || 0) / 100);
     const lowStock = Number(p.stock) <= 3;
     return `<tr data-id="${esc(p.id)}">
       <td><input type="checkbox" class="row-select" ${selectedProductIds.has(String(p.id)) ? "checked" : ""}></td>
+      <td><input type="number" class="sort-input" value="${Number(p.sort_order || 0)}" step="10" style="width:64px"></td>
       <td class="muted">${esc(p.name)}</td>
       <td><input type="text" class="name-input" value="${esc(p.custom_name || "")}" placeholder="${esc(p.name)}" style="width:150px"></td>
       <td>${money(p.price)}</td>
@@ -566,7 +573,11 @@ function renderProducts() {
       </td>
       <td><button class="switch ${p.enabled ? "on" : ""}" data-action="toggle" title="فعّل/عطّل المنتج فوراً"></button></td>
       <td><input type="text" class="emoji-input" value="${esc(p.emoji || "")}" placeholder="🙂" style="width:56px"></td>
-      <td><button class="btn btn-sm btn-primary" data-action="save">حفظ</button></td>
+      <td class="row-actions">
+        <button class="btn btn-sm btn-icon" data-action="up" title="رفع">↑</button>
+        <button class="btn btn-sm btn-icon" data-action="down" title="خفض">↓</button>
+        <button class="btn btn-sm btn-primary" data-action="save">حفظ</button>
+      </td>
     </tr>`;
   }).join("");
 }
@@ -593,13 +604,27 @@ function updateProductsBulkBar() {
   document.getElementById("productsBulkCount").textContent = n;
 }
 document.getElementById("productsBulkBar").addEventListener("click", async e => {
-  const bulk = e.target.dataset.bulk;
+  const actionBtn = e.target.closest("[data-bulk]");
+  const bulk = actionBtn && actionBtn.dataset.bulk;
   if (!bulk) return;
-  const enabled = bulk === "enable";
   const ids = Array.from(selectedProductIds);
+  const body = { ids };
+  if (bulk === "enable" || bulk === "disable") body.enabled = bulk === "enable";
+  if (bulk === "markup") {
+    const markup = document.getElementById("productsBulkMarkup").value;
+    if (markup === "") return toast("اكتب قيمة الهامش أولا", "error");
+    body.markup = markup;
+    body.markup_type = document.getElementById("productsBulkMarkupType").value;
+  }
+  if (bulk === "sort") {
+    const sort = document.getElementById("productsBulkSort").value;
+    if (sort === "") return toast("اكتب رقم الترتيب أولا", "error");
+    body.sort_order = sort;
+  }
   try {
-    await Promise.all(ids.map(id => api("products", { method: "PATCH", body: { id, enabled } })));
-    toast(`تم ${enabled ? "تفعيل" : "إخفاء"} ${ids.length} منتج ✅`);
+    const r = await api("products", { method: "PATCH", body });
+    toast(`تم تعديل ${ids.length} منتج ✅`);
+    showApiWarning(r);
     loadProducts();
   } catch (err) { toast(err.message, "error"); }
 });
@@ -613,8 +638,9 @@ document.querySelector("#productsTable tbody").addEventListener("click", async e
     e.target.classList.toggle("on");
     e.target.disabled = true;
     try {
-      await api("products", { method: "PATCH", body: { id, enabled: willEnable } });
+      const r = await api("products", { method: "PATCH", body: { id, enabled: willEnable } });
       toast(willEnable ? "تم تفعيل المنتج ✅" : "تم إخفاء المنتج من البوت ✅");
+      showApiWarning(r);
       const p = currentProducts.find(x => String(x.id) === String(id));
       if (p) p.enabled = willEnable;
     } catch (err) {
@@ -625,15 +651,29 @@ document.querySelector("#productsTable tbody").addEventListener("click", async e
     }
     return;
   }
+  if (e.target.dataset.action === "up" || e.target.dataset.action === "down") {
+    const input = tr.querySelector(".sort-input");
+    const next = Number(input.value || 0) + (e.target.dataset.action === "up" ? 10 : -10);
+    input.value = next;
+    try {
+      const r = await api("products", { method: "PATCH", body: { id, sort_order: next } });
+      toast("تم تحديث ترتيب المنتج ✅");
+      showApiWarning(r);
+      loadProducts();
+    } catch (err) { toast(err.message, "error"); }
+    return;
+  }
   if (e.target.dataset.action === "save") {
     const markup = tr.querySelector(".markup-input").value;
     const markup_type = tr.querySelector(".markup-type-input").value;
     const emoji = tr.querySelector(".emoji-input").value.trim();
     const custom_name = tr.querySelector(".name-input").value.trim();
     const enabled = tr.querySelector(".switch").classList.contains("on");
+    const sort_order = tr.querySelector(".sort-input").value;
     try {
-      await api("products", { method: "PATCH", body: { id, markup, markup_type, emoji, enabled, custom_name } });
+      const r = await api("products", { method: "PATCH", body: { id, markup, markup_type, emoji, enabled, custom_name, sort_order } });
       toast("تم الحفظ ✅");
+      showApiWarning(r);
       loadProducts();
     } catch (err) { toast(err.message, "error"); }
   }
@@ -660,26 +700,50 @@ function updateClientPricePreview(tr) {
 async function loadManual() {
   const grid = document.getElementById("manualGrid");
   grid.innerHTML = Array.from({ length: 3 }).map(() => `<div class="product-card"><span class="skel" style="width:70%"></span><span class="skel" style="height:22px;margin-top:8px"></span><span class="skel" style="height:30px;margin-top:8px"></span></div>`).join("");
+  selectedManualIds.clear();
+  updateManualBulkBar();
   try {
     const { products } = await api("products-manual");
-    if (!products.length) { grid.innerHTML = `<div class="empty-state">لا توجد منتجات يدوية بعد. دوس "+ منتج جديد" للبدء.</div>`; return; }
-    grid.innerHTML = products.map(p => `<div class="product-card" data-id="${p.id}">
+    currentManualProducts = products || [];
+    renderManualProducts();
+  } catch (e) { grid.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
+}
+
+function renderManualProducts() {
+  const grid = document.getElementById("manualGrid");
+  const q = (document.getElementById("manualSearch")?.value || "").trim().toLowerCase();
+  const products = currentManualProducts.filter(p => !q || String(p.name || "").toLowerCase().includes(q));
+  if (!products.length) { grid.innerHTML = `<div class="empty-state">لا توجد منتجات يدوية مطابقة.</div>`; return; }
+  grid.innerHTML = products.map(p => `<div class="product-card" data-id="${p.id}">
       <div class="pc-head">
-        <div class="pc-title">${p.emoji ? esc(p.emoji) + " " : ""}${esc(p.name)}</div>
+        <label class="card-check"><input type="checkbox" class="manual-select" ${selectedManualIds.has(String(p.id)) ? "checked" : ""}> <span class="pc-title">${p.emoji ? esc(p.emoji) + " " : ""}${esc(p.name)}</span></label>
         <span class="badge ${p.enabled ? "badge-green" : "badge-red"}">${p.enabled ? "مفعّل" : "معطّل"}</span>
       </div>
       <div class="pc-price">${money(p.price)} <span style="font-size:12px;color:var(--text-muted);font-weight:400">USDT</span></div>
       <div class="pc-meta">
         <span>📦 المخزون: <b class="${p.stock === 0 ? "low-stock" : ""}">${p.stock}</b></span>
         <span>الحد الأدنى: ${p.min_order}</span>
+        <span>الترتيب: <b>${Number(p.sort_order || 0)}</b></span>
       </div>
       <div class="pc-actions">
+        <button class="btn btn-sm btn-icon" data-action="up" title="رفع">↑</button>
+        <button class="btn btn-sm btn-icon" data-action="down" title="خفض">↓</button>
+        <button class="btn btn-sm ${p.enabled ? "btn-danger" : "btn-success"}" data-action="toggle">${p.enabled ? "إخفاء" : "تفعيل"}</button>
         <button class="btn btn-sm" data-action="stock">المخزون</button>
         <button class="btn btn-sm" data-action="edit">تعديل</button>
         <button class="btn btn-sm btn-danger" data-action="delete">حذف</button>
       </div>
     </div>`).join("");
-  } catch (e) { grid.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
+}
+
+document.getElementById("manualSearch").addEventListener("input", renderManualProducts);
+
+function updateManualBulkBar() {
+  const bar = document.getElementById("manualBulkBar");
+  if (!bar) return;
+  const n = selectedManualIds.size;
+  bar.classList.toggle("hidden", n === 0);
+  document.getElementById("manualBulkCount").textContent = n;
 }
 
 function manualProductForm(p = {}) {
@@ -694,11 +758,18 @@ function manualProductForm(p = {}) {
       <div><label>إيموجي (اختياري)</label><input id="mf_emoji" value="${esc(p.emoji || "")}"></div>
       <div><label>مفعّل؟</label><select id="mf_enabled"><option value="true" ${p.enabled !== false ? "selected" : ""}>نعم</option><option value="false" ${p.enabled === false ? "selected" : ""}>لا</option></select></div>
     </div>
+    <label>ترتيب الظهور في البوت</label><input id="mf_sort" type="number" step="10" value="${Number(p.sort_order || 0)}" placeholder="0">
+    <div class="preset-row">
+      <button class="btn btn-sm" type="button" data-preset="account">قالب حساب</button>
+      <button class="btn btn-sm" type="button" data-preset="code">قالب كود</button>
+      <button class="btn btn-sm" type="button" data-preset="activation">قالب تفعيل يدوي</button>
+    </div>
     <label>الوصف بالعربي (اختياري)</label><textarea id="mf_desc_ar">${esc(p.description_ar || "")}</textarea>
     <label>الوصف بالإنجليزي (اختياري)</label><textarea id="mf_desc_en">${esc(p.description_en || "")}</textarea>
     ${isNew ? `
     <label>أكواد/حسابات المخزون (سطر لكل وحدة — اختياري، تقدر تضيفها بعدين من زرار "المخزون")</label>
     <textarea id="mf_stock" placeholder="user1:pass1&#10;user2:pass2"></textarea>
+    <div id="mf_stock_summary" class="form-note">0 وحدة جاهزة للإضافة</div>
     <label class="upload-txt-label" for="mf_stock_file">${ic("download", "icon icon-sm")} أو ارفع ملف TXT (سطر لكل وحدة)</label>
     <input type="file" id="mf_stock_file" accept=".txt,text/plain">
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
@@ -725,6 +796,7 @@ function bindTxtUpload(fileInputId, textareaId) {
       const existing = textarea.value.trim();
       const incoming = String(reader.result || "").trim();
       textarea.value = existing ? `${existing}\n${incoming}` : incoming;
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
       const lines = incoming.split(/\r?\n/).filter(l => l.trim()).length;
       toast(`تم استيراد ${lines} سطر من الملف ✅`);
       fileInput.value = "";
@@ -740,11 +812,59 @@ document.getElementById("addManualBtn").addEventListener("click", () => {
   bindTxtUpload("mf_stock_file", "mf_stock");
 });
 
+document.getElementById("manualBulkBar").addEventListener("click", async e => {
+  const actionBtn = e.target.closest("[data-manual-bulk]");
+  const bulk = actionBtn && actionBtn.dataset.manualBulk;
+  if (!bulk) return;
+  const ids = Array.from(selectedManualIds);
+  const body = { ids };
+  if (bulk === "enable" || bulk === "disable") body.enabled = bulk === "enable";
+  if (bulk === "sort") {
+    const sort = document.getElementById("manualBulkSort").value;
+    if (sort === "") return toast("اكتب رقم الترتيب أولا", "error");
+    body.sort_order = sort;
+  }
+  try {
+    const r = await api("products-manual", { method: "PATCH", body });
+    toast(`تم تعديل ${ids.length} منتج يدوي ✅`);
+    showApiWarning(r);
+    loadManual();
+  } catch (err) { toast(err.message, "error"); }
+});
+
+document.getElementById("manualGrid").addEventListener("change", e => {
+  if (!e.target.classList.contains("manual-select")) return;
+  const id = e.target.closest(".product-card").dataset.id;
+  if (e.target.checked) selectedManualIds.add(id); else selectedManualIds.delete(id);
+  updateManualBulkBar();
+});
+
 document.getElementById("manualGrid").addEventListener("click", async e => {
   const card = e.target.closest(".product-card");
   if (!card) return;
   const id = card.dataset.id;
   const action = e.target.dataset.action;
+  if (action === "toggle") {
+    const p = currentManualProducts.find(x => String(x.id) === String(id));
+    try {
+      const r = await api("products-manual", { method: "PATCH", body: { id, enabled: !(p && p.enabled) } });
+      toast("تم تحديث حالة المنتج ✅");
+      showApiWarning(r);
+      loadManual();
+    } catch (err) { toast(err.message, "error"); }
+    return;
+  }
+  if (action === "up" || action === "down") {
+    const p = currentManualProducts.find(x => String(x.id) === String(id));
+    const next = Number((p && p.sort_order) || 0) + (action === "up" ? 10 : -10);
+    try {
+      const r = await api("products-manual", { method: "PATCH", body: { id, sort_order: next } });
+      toast("تم تحديث ترتيب المنتج ✅");
+      showApiWarning(r);
+      loadManual();
+    } catch (err) { toast(err.message, "error"); }
+    return;
+  }
   if (action === "delete") {
     if (!confirm("تأكيد حذف هذا المنتج؟ سيتم حذف مخزونه أيضاً.")) return;
     try { await api(`products-manual?id=${id}`, { method: "DELETE" }); toast("تم الحذف ✅"); loadManual(); }
@@ -762,6 +882,43 @@ document.getElementById("manualGrid").addEventListener("click", async e => {
 });
 
 function bindManualForm(id) {
+  const presets = {
+    account: {
+      emoji: "🔐",
+      ar: "سيتم تسليم بيانات الحساب تلقائيا بعد الدفع.\nغيّر كلمة المرور بعد الاستلام إذا كانت الخدمة تسمح بذلك.",
+      en: "Account credentials are delivered automatically after payment.\nChange the password after delivery if the service allows it."
+    },
+    code: {
+      emoji: "🎟️",
+      ar: "سيتم تسليم الكود تلقائيا بعد الدفع.\nاستخدم الكود مرة واحدة حسب شروط الخدمة.",
+      en: "The code is delivered automatically after payment.\nUse the code once according to the service terms."
+    },
+    activation: {
+      emoji: "📩",
+      ar: "هذا المنتج يحتاج تفعيل يدوي. سيطلب البوت من العميل البريد أو اليوزر المطلوب بعد الدفع.",
+      en: "This product requires manual activation. The bot asks the customer for the needed email or username after payment."
+    }
+  };
+  modalBody.querySelectorAll("[data-preset]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const p = presets[btn.dataset.preset];
+      if (!p) return;
+      if (!document.getElementById("mf_emoji").value.trim()) document.getElementById("mf_emoji").value = p.emoji;
+      document.getElementById("mf_desc_ar").value = p.ar;
+      document.getElementById("mf_desc_en").value = p.en;
+      toast("تم تطبيق القالب ✅");
+    });
+  });
+  const stockBox = document.getElementById("mf_stock");
+  const stockSummary = document.getElementById("mf_stock_summary");
+  if (stockBox && stockSummary) {
+    const updateStockSummary = () => {
+      const count = stockBox.value.split(/\r?\n/).filter(l => l.trim()).length;
+      stockSummary.textContent = `${count} وحدة جاهزة للإضافة`;
+    };
+    stockBox.addEventListener("input", updateStockSummary);
+    updateStockSummary();
+  }
   document.getElementById("mf_cancel").addEventListener("click", closeModal);
   document.getElementById("mf_save").addEventListener("click", async () => {
     const body = {
@@ -770,6 +927,7 @@ function bindManualForm(id) {
       min_order: document.getElementById("mf_min").value,
       emoji: document.getElementById("mf_emoji").value.trim(),
       enabled: document.getElementById("mf_enabled").value === "true",
+      sort_order: document.getElementById("mf_sort").value,
       description_ar: document.getElementById("mf_desc_ar").value.trim(),
       description_en: document.getElementById("mf_desc_en").value.trim()
     };
@@ -781,9 +939,11 @@ function bindManualForm(id) {
     try {
       let msg = "تم الحفظ ✅";
       if (id) {
-        await api("products-manual", { method: "PATCH", body: { id, ...body } });
+        const r = await api("products-manual", { method: "PATCH", body: { id, ...body } });
+        showApiWarning(r);
       } else {
         const r = await api("products-manual", { method: "POST", body });
+        showApiWarning(r);
         if (r.stockAdded) msg += ` — تمت إضافة ${r.stockAdded} وحدة مخزون`;
         if (r.broadcast) msg += ` وإشعار ${r.broadcast.sent}/${r.broadcast.total} عميل`;
         if (!r.stockAdded && body.stock_lines.trim()) msg = "تم إنشاء المنتج، لكن حصل خطأ في المخزون: " + (r.stockError || "");

@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS products (
   markup        NUMERIC(6,2) DEFAULT 30,          -- ganancia del revendedor: % o monto fijo segun markup_type (LO CONFIGURA EL REVENDEDOR)
   markup_type   TEXT DEFAULT 'percent',           -- 'percent' (%) o 'fixed' (monto fijo en USDT)
   enabled       BOOLEAN DEFAULT true,             -- true = visible en la tienda (TOGGLE del revendedor)
+  sort_order    INT DEFAULT 0,                    -- orden manual en la tienda (mayor = aparece primero)
   emoji         TEXT,                             -- (opcional) forzar un emoji; si esta vacio se detecta por nombre
   custom_name   TEXT,                             -- (opcional) nombre propio del revendedor; si esta vacio se usa el de la API
   description_es TEXT,                            -- descripcion en espanol (la trae la API KOKORO)
@@ -68,6 +69,7 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS native_id TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS custom_name TEXT;
 -- Por si la tabla products ya existia sin el tipo de markup (% o monto fijo):
 ALTER TABLE products ADD COLUMN IF NOT EXISTS markup_type TEXT DEFAULT 'percent';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0;
 -- Por si la tabla products ya existia sin las columnas de descripcion:
 ALTER TABLE products ADD COLUMN IF NOT EXISTS description_es TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS description_en TEXT;
@@ -84,6 +86,7 @@ CREATE TABLE IF NOT EXISTS products_manual (
   price         NUMERIC(12,2) DEFAULT 0,          -- PRECIO FINAL al cliente (ya con su ganancia)
   min_order     INT DEFAULT 1,
   enabled       BOOLEAN DEFAULT true,             -- TOGGLE para apagar/prender
+  sort_order    INT DEFAULT 0,                    -- orden manual en la tienda (mayor = aparece primero)
   emoji         TEXT,                             -- (opcional) emoji del producto
   description_ar TEXT,                            -- descripcion en ARABE (se muestra a clientes en ar)
   description_es TEXT,                            -- descripcion en ESPANOL (legado, ya no se usa en el bot)
@@ -95,6 +98,7 @@ CREATE TABLE IF NOT EXISTS products_manual (
 ALTER TABLE products_manual ADD COLUMN IF NOT EXISTS description_ar TEXT;
 ALTER TABLE products_manual ADD COLUMN IF NOT EXISTS description_es TEXT;
 ALTER TABLE products_manual ADD COLUMN IF NOT EXISTS description_en TEXT;
+ALTER TABLE products_manual ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0;
 -- Quitar la columna legada 'description' si existe (ya no se usa):
 ALTER TABLE products_manual DROP COLUMN IF EXISTS description;
 
@@ -277,6 +281,8 @@ CREATE INDEX IF NOT EXISTS orders_created_at_idx       ON orders (created_at DES
 CREATE INDEX IF NOT EXISTS orders_status_idx           ON orders (status);
 CREATE INDEX IF NOT EXISTS stock_manual_product_idx   ON stock_manual (product_id, is_sold);
 CREATE INDEX IF NOT EXISTS products_enabled_idx       ON products (enabled);
+CREATE INDEX IF NOT EXISTS products_sort_idx          ON products (sort_order DESC, name);
+CREATE INDEX IF NOT EXISTS products_manual_sort_idx   ON products_manual (sort_order DESC, name);
 
 -- ============================================================
 --  LISTO. Tu base de datos quedo configurada.

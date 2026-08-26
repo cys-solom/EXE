@@ -15,15 +15,27 @@ const REQUIRED_TABLES = [
   "support_tickets"
 ];
 
+const REQUIRED_COLUMNS = {
+  products: ["sort_order"],
+  products_manual: ["sort_order"]
+};
+
 async function checkSchema() {
   const supabase = getSupabase();
   const checks = await Promise.all(REQUIRED_TABLES.map(async table => {
     const { error } = await supabase.from(table).select("id", { count: "exact", head: true });
     return { table, ok: !error, error: error ? error.message : null };
   }));
+  const columnChecks = await Promise.all(Object.entries(REQUIRED_COLUMNS).flatMap(([table, columns]) =>
+    columns.map(async column => {
+      const { error } = await supabase.from(table).select(column, { count: "exact", head: true });
+      return { table, column, ok: !error, error: error ? error.message : null };
+    })
+  ));
   return {
-    ok: checks.every(c => c.ok),
-    tables: checks
+    ok: checks.every(c => c.ok) && columnChecks.every(c => c.ok),
+    tables: checks,
+    columns: columnChecks
   };
 }
 

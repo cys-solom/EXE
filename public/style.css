@@ -264,9 +264,14 @@ body {
 .bulk-bar {
   display: flex; align-items: center; gap: 12px; background: var(--primary-soft); border: 1px solid var(--primary);
   border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 12px; font-size: 13.5px;
+  flex-wrap: wrap;
 }
 .bulk-bar .count { font-weight: 700; }
 .bulk-bar-spacer { flex: 1; }
+.bulk-bar input, .bulk-bar select {
+  width: 92px; padding: 7px 9px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--bg-elev-2); color: var(--text); font-size: 12.5px;
+}
 
 /* ---------- Table ---------- */
 .table-wrap {
@@ -285,6 +290,7 @@ td input[type="number"], td input[type="text"] {
   width: 90px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border);
   background: var(--bg-elev-2); color: var(--text); font-size: 13px;
 }
+.row-actions { display: flex; gap: 5px; align-items: center; }
 .badge { padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; display: inline-block; }
 .badge-green { background: var(--success-soft); color: var(--success); }
 .badge-red { background: var(--danger-soft); color: var(--danger); }
@@ -315,10 +321,12 @@ td input[type="number"], td input[type="text"] {
 .product-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--primary); }
 .product-card .pc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .product-card .pc-title { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.card-check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; min-width: 0; }
+.card-check input { margin-top: 2px; }
 .product-card .pc-price { font-size: 19px; font-weight: 800; }
 .product-card .pc-meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
-.product-card .pc-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; }
-.product-card .pc-actions .btn { flex: 1; justify-content: center; }
+.product-card .pc-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; flex-wrap: wrap; }
+.product-card .pc-actions .btn:not(.btn-icon) { flex: 1; justify-content: center; min-width: 74px; }
 
 /* ---------- Activity log ---------- */
 .activity-feed { display: flex; flex-direction: column; }
@@ -357,6 +365,11 @@ td input[type="number"], td input[type="text"] {
 .upload-txt-label {
   display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--primary) !important;
   font-weight: 600; margin-top: -4px;
+}
+.preset-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.form-note {
+  border: 1px dashed var(--border); color: var(--text-muted); background: var(--bg-elev-2);
+  border-radius: var(--radius-sm); padding: 8px 10px; font-size: 12.5px;
 }
 .modal-body input[type="file"] {
   padding: 8px 10px; font-size: 12.5px; color: var(--text-muted);

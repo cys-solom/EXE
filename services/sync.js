@@ -73,7 +73,7 @@ async function syncProductsOnce(supabase) {
     const { data: existingRows } = ids.length
       ? await supabase
         .from("products")
-        .select("id, markup, markup_type, enabled, emoji, custom_name")
+        .select("id, markup, markup_type, enabled, emoji, custom_name, sort_order")
         .in("id", ids)
       : { data: [] };
     const existingById = new Map((existingRows || []).map(row => [String(row.id), row]));
@@ -110,6 +110,7 @@ async function syncProductsOnce(supabase) {
         row.enabled = existing.enabled;
         row.emoji = existing.emoji;
         row.custom_name = existing.custom_name;
+        row.sort_order = Number(existing.sort_order || 0);
       } else {
         // Producto nuevo: valores por defecto
         row.markup = 30;
@@ -117,6 +118,7 @@ async function syncProductsOnce(supabase) {
         row.enabled = true;
         row.emoji = null;
         row.custom_name = null;
+        row.sort_order = 0;
       }
 
       rows.push(row);

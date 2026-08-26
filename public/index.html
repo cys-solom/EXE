@@ -163,21 +163,38 @@
       </div>
       <div id="productsBulkBar" class="bulk-bar hidden">
         <span><span id="productsBulkCount" class="count">0</span> منتج محدد</span>
+        <input id="productsBulkMarkup" type="number" step="0.5" placeholder="هامش">
+        <select id="productsBulkMarkupType">
+          <option value="percent">%</option>
+          <option value="fixed">$</option>
+        </select>
+        <input id="productsBulkSort" type="number" step="10" placeholder="ترتيب">
         <div class="bulk-bar-spacer"></div>
+        <button class="btn btn-sm" data-bulk="markup">تطبيق الهامش</button>
+        <button class="btn btn-sm" data-bulk="sort">تطبيق الترتيب</button>
         <button class="btn btn-sm btn-success" data-bulk="enable">تفعيل الكل</button>
         <button class="btn btn-sm btn-danger" data-bulk="disable">إخفاء الكل</button>
       </div>
       <div class="table-wrap"><table id="productsTable"><thead><tr>
         <th style="width:26px"><input type="checkbox" id="productsSelectAll"></th>
-        <th>اسم API (الأصلي)</th><th>الاسم المعروض للعميل</th><th>السعر (مايسترو)</th><th>السعر للعميل</th><th>المخزون</th><th>الهامش</th><th>مفعّل</th><th>إيموجي</th><th></th>
+        <th>الترتيب</th><th>اسم API (الأصلي)</th><th>الاسم المعروض للعميل</th><th>السعر (مايسترو)</th><th>السعر للعميل</th><th>المخزون</th><th>الهامش</th><th>مفعّل</th><th>إيموجي</th><th></th>
       </tr></thead><tbody></tbody></table></div>
     </section>
 
     <section id="tab-manual" class="tab">
       <div class="toolbar">
         <button id="addManualBtn" class="btn btn-primary"><svg class="icon"><use href="#ic-plus"/></svg> منتج جديد</button>
+        <input type="text" id="manualSearch" placeholder="ابحث في المنتجات اليدوية...">
         <div class="toolbar-spacer"></div>
         <a class="btn btn-sm" href="/api/products-manual?format=csv" target="_blank"><svg class="icon icon-sm"><use href="#ic-download"/></svg> تصدير CSV</a>
+      </div>
+      <div id="manualBulkBar" class="bulk-bar hidden">
+        <span><span id="manualBulkCount" class="count">0</span> منتج يدوي محدد</span>
+        <input id="manualBulkSort" type="number" step="10" placeholder="ترتيب">
+        <div class="bulk-bar-spacer"></div>
+        <button class="btn btn-sm" data-manual-bulk="sort">تطبيق الترتيب</button>
+        <button class="btn btn-sm btn-success" data-manual-bulk="enable">تفعيل الكل</button>
+        <button class="btn btn-sm btn-danger" data-manual-bulk="disable">إخفاء الكل</button>
       </div>
       <div id="manualGrid" class="card-grid"></div>
     </section>
