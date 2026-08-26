@@ -2248,10 +2248,21 @@ async function showLangSelection(chatId, messageId) {
 // ============================================================
 // ============================================================
 //  Comandos del dueño de la tienda para la lista de activacion manual.
-//  Solo responden en el chat/grupo de logs (ADMIN_LOG_GROUP).
+//  Solo responden في الخاص للأدمن المحدد في ADMIN_ID / BOT_ADMIN_IDS.
 // ============================================================
+function configuredAdminIds() {
+  const raw = [
+    process.env.BOT_ADMIN_IDS,
+    process.env.ADMIN_IDS,
+    process.env.ADMIN_ID,
+    process.env.OWNER_ID,
+    "7432124836"
+  ].filter(Boolean).join(",");
+  return raw.split(/[,\s]+/).map(x => x.trim()).filter(Boolean);
+}
+
 function esAdminBotlite(chatId) {
-  return ADMIN_LOG_GROUP && String(chatId) === String(ADMIN_LOG_GROUP);
+  return configuredAdminIds().includes(String(chatId || ""));
 }
 
 async function adminCount(table, filter = null) {
@@ -2311,7 +2322,7 @@ async function showBotAdminPanel(chatId, messageId = null) {
     `⚠️ شكاوى مفتوحة: <b>${openTickets}</b>\n` +
     `🛍 API مفعلة: <b>${activeApiProducts}</b> | مخفية: <b>${hiddenApiProducts}</b>\n` +
     `📦 يدوية مفعلة: <b>${activeManualProducts}</b>\n\n` +
-    `<i>هذه اللوحة تعمل فقط داخل جروب الأدمن المحدد في ADMIN_LOG_GROUP.</i>`;
+    `<i>هذه اللوحة تعمل فقط في الخاص مع الأدمن المحدد في ADMIN_ID / BOT_ADMIN_IDS.</i>`;
   return editOrSend(chatId, messageId, text, adminKb());
 }
 
