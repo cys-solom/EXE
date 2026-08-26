@@ -1120,20 +1120,20 @@ async function showLoadingSticker(chatId) {
   }
 }
 
+function deleteMessageLater(chatId, messageId, delayMs) {
+  if (!messageId || !delayMs || delayMs <= 0) return;
+  setTimeout(() => {
+    bot.deleteMessage(chatId, messageId).catch(() => {});
+  }, delayMs);
+}
+
 async function showShop(chatId, messageId) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
-  // Mostrar rayito de carga mientras se traen los productos
-  const loadingStartedAt = Date.now();
+  // Fire-and-forget Telegram effect so it never blocks the shop response.
   const loadingPromise = SHOP_LOADING ? showLoadingSticker(chatId) : Promise.resolve(null);
+  loadingPromise.then(loadingMsgId => deleteMessageLater(chatId, loadingMsgId, SHOP_LOADING_MIN_MS)).catch(() => {});
   let products = await loadProducts(chatId);
-  const loadingMsgId = await loadingPromise;
-  // Borrar el rayito cuando los productos ya cargaron
-  const waitMs = SHOP_LOADING ? SHOP_LOADING_MIN_MS - (Date.now() - loadingStartedAt) : 0;
-  if (waitMs > 0) await sleep(waitMs);
-  if (loadingMsgId) {
-    try { await bot.deleteMessage(chatId, loadingMsgId); } catch (e) {}
-  }
   if (products.length === 0) {
     return editOrSend(chatId, messageId, `${tg("🛍️", ICON("CART"))} ${t.noProducts}`, [[styledButton(t.backHome, "home", "danger", ICON("HOME"))]]);
   }
