@@ -30,7 +30,7 @@ proveedor mayorista: tú pones tu **markup** por producto y ganas la diferencia.
 |----------|----------------|
 | `BOT_TOKEN` | @BotFather al crear tu bot |
 | `ADMIN_LOG_GROUP` | ID del grupo donde quieres los logs |
-| `ADMIN_ID` / `BOT_ADMIN_IDS` | Telegram ID del admin que puede abrir `/admin` en privado |
+| `ADMIN_ID` / `BOT_ADMIN_IDS` | Telegram ID autorizado para comandos admin legacy; la administracion completa esta en el panel web |
 | `KOKORO_API_KEY` | Bot de KOKORO → 🔗 API LINK → Generar token |
 | `SUPABASE_URL` / `SUPABASE_KEY` | Supabase → Project Settings → API |
 | `BINANCE_API_KEY` / `BINANCE_SECRET_KEY` | Binance → API Management |

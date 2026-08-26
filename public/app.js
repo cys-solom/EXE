@@ -342,6 +342,24 @@ document.getElementById("addProviderBtn").addEventListener("click", () => {
   bindProviderForm(null);
 });
 
+document.getElementById("syncProductsBtn").addEventListener("click", async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  const old = btn.innerHTML;
+  btn.innerHTML = `${ic("refresh")} جاري المزامنة...`;
+  try {
+    const r = await api("sync-products", { method: "POST", body: {} });
+    toast(`تمت مزامنة ${r.count || 0} منتج ✅`);
+    clearApiCache();
+    loadProviders();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = old;
+  }
+});
+
 document.getElementById("providersGrid").addEventListener("click", async e => {
   const card = e.target.closest(".product-card");
   if (!card) return;

@@ -21,7 +21,7 @@ const { createClient } = require("@supabase/supabase-js");
 
 const { fetchKokoroProducts, fetchKokoroBalance, purchaseKokoro, defaultProviderFromEnv } = require("./services/kokoroApi.js");
 const { productIcon, productTextEmoji } = require("./services/emojis.js");
-const { syncProductsOnce, startProductSync, getActiveProviders } = require("./services/sync.js");
+const { startProductSync, getActiveProviders } = require("./services/sync.js");
 const payments = require("./services/payments.js");
 
 const REQUIRED = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "KOKORO_API_KEY"];
@@ -90,7 +90,7 @@ const CHANNEL_CACHE_MS = Number(process.env.CHANNEL_CACHE_MS || 60000);
 const CHANNEL_CHECK_TIMEOUT_MS = Number(process.env.CHANNEL_CHECK_TIMEOUT_MS || 1000);
 const START_DB_TIMEOUT_MS = Number(process.env.START_DB_TIMEOUT_MS || 500);
 const SHOP_LOADING = process.env.SHOP_LOADING !== "false";
-const SHOP_LOADING_MIN_MS = Number(process.env.SHOP_LOADING_MIN_MS || 1600);
+const SHOP_LOADING_MIN_MS = Number(process.env.SHOP_LOADING_MIN_MS || 2600);
 const SHOP_LIGHTNING_EFFECT_ID = process.env.SHOP_LIGHTNING_EFFECT_ID || "5123236135417415011";
 
 async function withTimeout(promise, ms, fallback, label) {
@@ -1162,11 +1162,11 @@ async function showLoadingSticker(chatId) {
   const opts = { parse_mode: "HTML" };
   if (SHOP_LIGHTNING_EFFECT_ID) opts.message_effect_id = String(SHOP_LIGHTNING_EFFECT_ID);
   try {
-    const res = await bot.sendMessage(chatId, tg("\u26A1", ICON("LIGHTNING")), opts);
+    const res = await bot.sendMessage(chatId, "⚡", opts);
     return res.message_id;
   } catch (err) {
     try {
-      const res = await bot.sendMessage(chatId, tg("\u26A1", ICON("LIGHTNING")), { parse_mode: "HTML" });
+      const res = await bot.sendMessage(chatId, "⚡", { parse_mode: "HTML" });
       return res.message_id;
     } catch (e) { return null; }
   }
@@ -2265,157 +2265,6 @@ function esAdminBotlite(chatId) {
   return configuredAdminIds().includes(String(chatId || ""));
 }
 
-async function adminCount(table, filter = null) {
-  let query = supabase.from(table).select("*", { count: "exact", head: true });
-  if (filter) query = filter(query);
-  const { count, error } = await query;
-  if (error) throw error;
-  return count || 0;
-}
-
-function adminKb() {
-  return [
-    [styledButton("📊 الإحصائيات", "admin_home", "primary"), styledButton("🔄 مزامنة المنتجات", "admin_sync", "success")],
-    [styledButton("🧾 طلبات تنتظر التسليم", "admin_pending", "primary"), styledButton("⚠️ الشكاوى المفتوحة", "admin_tickets", "danger")],
-    [styledButton("📦 مخزون منخفض", "admin_lowstock", "primary"), styledButton("🛍 حالة المنتجات", "admin_products", "primary")],
-    [styledButton("🧰 أوامر الأدمن", "admin_help", "primary"), styledButton("🔁 تحديث", "admin_home", "success")]
-  ];
-}
-
-async function showBotAdminPanel(chatId, messageId = null) {
-  if (!esAdminBotlite(chatId)) return;
-  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const [
-    usersCount,
-    ordersCount,
-    todayOrders,
-    pendingOrders,
-    openTickets,
-    activeApiProducts,
-    hiddenApiProducts,
-    activeManualProducts
-  ] = await Promise.all([
-    adminCount("users"),
-    adminCount("orders"),
-    adminCount("orders", q => q.gte("created_at", since)),
-    adminCount("orders", q => q.eq("status", "paid")),
-    adminCount("support_tickets", q => q.eq("status", "open")),
-    adminCount("products", q => q.eq("enabled", true)),
-    adminCount("products", q => q.eq("enabled", false)),
-    adminCount("products_manual", q => q.eq("enabled", true))
-  ]);
-
-  const { data: delivered } = await supabase
-    .from("orders")
-    .select("total")
-    .eq("status", "delivered")
-    .gte("created_at", since);
-  const todayRevenue = (delivered || []).reduce((sum, o) => sum + Number(o.total || 0), 0);
-
-  const text =
-    `<b>🛡 لوحة أدمن البوت</b>\n\n` +
-    `👥 العملاء: <b>${usersCount}</b>\n` +
-    `🧾 كل الطلبات: <b>${ordersCount}</b>\n` +
-    `📅 طلبات اليوم: <b>${todayOrders}</b>\n` +
-    `💰 إيراد اليوم: <b>${money(todayRevenue)} USDT</b>\n` +
-    `⏳ ينتظر التسليم: <b>${pendingOrders}</b>\n` +
-    `⚠️ شكاوى مفتوحة: <b>${openTickets}</b>\n` +
-    `🛍 API مفعلة: <b>${activeApiProducts}</b> | مخفية: <b>${hiddenApiProducts}</b>\n` +
-    `📦 يدوية مفعلة: <b>${activeManualProducts}</b>\n\n` +
-    `<i>هذه اللوحة تعمل فقط في الخاص مع الأدمن المحدد في ADMIN_ID / BOT_ADMIN_IDS.</i>`;
-  return editOrSend(chatId, messageId, text, adminKb());
-}
-
-async function showAdminPendingOrders(chatId, messageId = null) {
-  if (!esAdminBotlite(chatId)) return;
-  const { data, error } = await supabase
-    .from("orders")
-    .select("id, order_code, telegram_id, product_name, quantity, total, payment_method, created_at")
-    .eq("status", "paid")
-    .order("created_at", { ascending: false })
-    .limit(10);
-  if (error) return editOrSend(chatId, messageId, `❌ ${htmlEscape(error.message)}`, adminKb());
-  const rows = (data || []).map(o =>
-    `• <code>${orderCode(o)}</code> | <code>${o.telegram_id}</code>\n  ${htmlEscape(o.product_name || "-")} x${o.quantity || 1} — ${money(o.total)} USDT — ${orderPaymentLabel(o.payment_method)}`
-  );
-  const text = `<b>🧾 طلبات تنتظر التسليم</b>\n\n${rows.length ? rows.join("\n\n") : "لا توجد طلبات تنتظر التسليم."}`;
-  return editOrSend(chatId, messageId, text, [[styledButton("⬅️ رجوع", "admin_home", "primary"), styledButton("🔁 تحديث", "admin_pending", "success")]]);
-}
-
-async function showAdminTickets(chatId, messageId = null) {
-  if (!esAdminBotlite(chatId)) return;
-  const { data, error } = await supabase
-    .from("support_tickets")
-    .select("id, order_id, telegram_id, description, created_at")
-    .eq("status", "open")
-    .order("created_at", { ascending: false })
-    .limit(10);
-  if (error) return editOrSend(chatId, messageId, `❌ ${htmlEscape(error.message)}`, adminKb());
-  const rows = (data || []).map(t =>
-    `• #${t.id} | <code>${t.telegram_id}</code>${t.order_id ? ` | order #${t.order_id}` : ""}\n  ${htmlEscape(String(t.description || "").slice(0, 120))}`
-  );
-  const text = `<b>⚠️ الشكاوى المفتوحة</b>\n\n${rows.length ? rows.join("\n\n") : "لا توجد شكاوى مفتوحة."}`;
-  return editOrSend(chatId, messageId, text, [[styledButton("⬅️ رجوع", "admin_home", "primary"), styledButton("🔁 تحديث", "admin_tickets", "success")]]);
-}
-
-async function showAdminLowStock(chatId, messageId = null) {
-  if (!esAdminBotlite(chatId)) return;
-  let { data: products, error } = await supabase.from("products_manual").select("id, name, enabled").order("sort_order", { ascending: false }).order("name");
-  if (error && /sort_order/i.test(error.message || "")) {
-    ({ data: products, error } = await supabase.from("products_manual").select("id, name, enabled").order("name"));
-  }
-  if (error) return editOrSend(chatId, messageId, `❌ ${htmlEscape(error.message)}`, adminKb());
-  const ids = (products || []).map(p => p.id);
-  let counts = {};
-  if (ids.length) {
-    const { data: stock } = await supabase.from("stock_manual").select("product_id").in("product_id", ids).eq("is_sold", false);
-    (stock || []).forEach(s => { counts[s.product_id] = (counts[s.product_id] || 0) + 1; });
-  }
-  const low = (products || []).map(p => ({ ...p, stock: counts[p.id] || 0 })).filter(p => p.stock <= 3).slice(0, 15);
-  const rows = low.map(p => `• ${p.enabled ? "🟢" : "🔴"} <b>${htmlEscape(p.name)}</b> — المخزون: <b>${p.stock}</b>`);
-  const text = `<b>📦 المنتجات اليدوية منخفضة المخزون</b>\n\n${rows.length ? rows.join("\n") : "كل المنتجات اليدوية مخزونها جيد."}`;
-  return editOrSend(chatId, messageId, text, [[styledButton("⬅️ رجوع", "admin_home", "primary"), styledButton("🔁 تحديث", "admin_lowstock", "success")]]);
-}
-
-async function showAdminProductsStatus(chatId, messageId = null) {
-  if (!esAdminBotlite(chatId)) return;
-  const [apiOn, apiOff, manualOn, manualOff] = await Promise.all([
-    adminCount("products", q => q.eq("enabled", true)),
-    adminCount("products", q => q.eq("enabled", false)),
-    adminCount("products_manual", q => q.eq("enabled", true)),
-    adminCount("products_manual", q => q.eq("enabled", false))
-  ]);
-  const text =
-    `<b>🛍 حالة المنتجات</b>\n\n` +
-    `KOKORO API\n🟢 مفعلة: <b>${apiOn}</b>\n🔴 مخفية: <b>${apiOff}</b>\n\n` +
-    `منتجات يدوية\n🟢 مفعلة: <b>${manualOn}</b>\n🔴 مخفية: <b>${manualOff}</b>`;
-  return editOrSend(chatId, messageId, text, [[styledButton("⬅️ رجوع", "admin_home", "primary"), styledButton("🔁 تحديث", "admin_products", "success")]]);
-}
-
-async function showAdminHelp(chatId, messageId = null) {
-  if (!esAdminBotlite(chatId)) return;
-  const text =
-    `<b>🧰 أوامر أدمن البوت</b>\n\n` +
-    `/admin — فتح لوحة الأدمن\n` +
-    `/entregar — تسليم طلب يدوي\n` +
-    `/cancelar — إلغاء جلسة التسليم اليدوي\n` +
-    `/correos_add اسم المنتج — جعل منتج يطلب بريد/يوزر\n` +
-    `/correos_list — عرض منتجات التفعيل اليدوي\n` +
-    `/correos_del اسم المنتج — حذف منتج من التفعيل اليدوي\n\n` +
-    `للتحكم الكامل في المنتجات والعملاء والتعويضات استخدم لوحة الويب.`;
-  return editOrSend(chatId, messageId, text, [[styledButton("⬅️ رجوع", "admin_home", "primary")]]);
-}
-
-async function runAdminSync(chatId, messageId = null) {
-  if (!esAdminBotlite(chatId)) return;
-  await editOrSend(chatId, messageId, "🔄 <b>جاري مزامنة المنتجات من المزودين...</b>", [[styledButton("⬅️ رجوع", "admin_home", "primary")]]);
-  const result = await syncProductsOnce(supabase);
-  const text = result.success
-    ? `✅ <b>تمت المزامنة</b>\n\nعدد المنتجات المحدثة: <b>${result.count || 0}</b>`
-    : `❌ <b>فشلت المزامنة</b>\n\n${htmlEscape(result.error || "unknown error")}`;
-  return editOrSend(chatId, messageId, text, [[styledButton("⬅️ رجوع", "admin_home", "primary"), styledButton("🔄 إعادة المزامنة", "admin_sync", "success")]]);
-}
-
 bot.onText(/^\/correos_add(?:\s+([\s\S]+))?$/, async msg => {
   const chatId = msg.chat.id;
   if (!esAdminBotlite(chatId)) return;
@@ -2465,12 +2314,6 @@ bot.onText(/^\/correos_del(?:\s+([\s\S]+))?$/, async msg => {
   if (error) return bot.sendMessage(chatId, "No se pudo quitar: " + error.message);
   global.emailActivationListTime = 0;
   return bot.sendMessage(chatId, `✅ Quitado: <b>${nombre}</b>\n\nVuelve a entregarse automaticamente.`, { parse_mode: "HTML" });
-});
-
-bot.onText(/^\/(?:admin|panel)$/, async msg => {
-  const chatId = msg.chat.id;
-  if (!esAdminBotlite(chatId)) return;
-  return showBotAdminPanel(chatId, null);
 });
 
 bot.onText(/\/start/, async msg => {
@@ -2580,17 +2423,6 @@ bot.on("callback_query", async query => {
     syncUsername(chatId, query.from);
     if (data !== "where_order_id") { try { await bot.answerCallbackQuery(query.id); } catch (e) {} }
     if (data === "noop") return;
-
-    if (data && data.startsWith("admin_")) {
-      if (!esAdminBotlite(chatId)) return;
-      if (data === "admin_home") return showBotAdminPanel(chatId, messageId);
-      if (data === "admin_sync") return runAdminSync(chatId, messageId);
-      if (data === "admin_pending") return showAdminPendingOrders(chatId, messageId);
-      if (data === "admin_tickets") return showAdminTickets(chatId, messageId);
-      if (data === "admin_lowstock") return showAdminLowStock(chatId, messageId);
-      if (data === "admin_products") return showAdminProductsStatus(chatId, messageId);
-      if (data === "admin_help") return showAdminHelp(chatId, messageId);
-    }
 
     if (data === "setlang_en" || data === "setlang_ar") {
       const language = data === "setlang_ar" ? "ar" : "en";
