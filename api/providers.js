@@ -3,11 +3,20 @@ const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
 const { logActivity } = require("./_lib/activity.js");
 const { fetchKokoroBalance } = require("../services/kokoroApi.js");
+const BALANCE_TIMEOUT_MS = Number(process.env.ADMIN_BALANCE_TIMEOUT_MS || 1500);
 
 function maskKey(key) {
   const s = String(key || "");
   if (s.length <= 8) return "****";
   return s.slice(0, 4) + "…" + s.slice(-4);
+}
+
+function withTimeout(promise, ms, fallback) {
+  let timer = null;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise(resolve => { timer = setTimeout(() => resolve(fallback), ms); })
+  ]);
 }
 
 module.exports = requireAuth(async (req, res) => {
@@ -20,7 +29,7 @@ module.exports = requireAuth(async (req, res) => {
     const withBalance = await Promise.all((data || []).map(async p => {
       let balance = null, balanceError = null;
       if (p.active) {
-        const bal = await fetchKokoroBalance(p);
+        const bal = await withTimeout(fetchKokoroBalance(p), BALANCE_TIMEOUT_MS, { success: false, balance: 0, error: "balance timeout" });
         if (bal.success) balance = bal.balance; else balanceError = bal.error;
       }
       return { id: p.id, name: p.name, base_url: p.base_url, api_key_masked: maskKey(p.api_key), active: p.active, is_default: p.is_default, created_at: p.created_at, balance, balanceError };

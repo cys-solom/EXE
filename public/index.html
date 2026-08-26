@@ -94,6 +94,8 @@
     <header class="topbar">
       <button id="menuToggle" class="menu-toggle"><svg class="icon icon-lg"><use href="#ic-menu"/></svg></button>
       <h2 id="pageTitle">لوحة التحكم</h2>
+      <span id="dataStatus" class="status-pill">جاهز</span>
+      <button id="langToggle" class="btn btn-ghost btn-sm">EN</button>
       <button id="refreshBtn" class="btn btn-ghost"><svg class="icon"><use href="#ic-refresh"/></svg> تحديث</button>
     </header>
 
@@ -101,6 +103,7 @@
 
     <section id="tab-dashboard" class="tab active">
       <div id="dashboardStats" class="stats-grid"></div>
+      <div id="quickOps" class="quick-ops"></div>
       <div class="dash-grid">
         <div class="card">
           <h3><svg class="icon" style="stroke:var(--primary)"><use href="#ic-activity"/></svg> الإيرادات — آخر 14 يوم</h3>

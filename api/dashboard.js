@@ -5,9 +5,18 @@ const { getActiveProviders } = require("../services/sync.js");
 
 const CHART_DAYS = 14;
 const LOW_BALANCE_THRESHOLD = 10; // USDT — debajo de esto se marca como "bajo" en el dashboard
+const BALANCE_TIMEOUT_MS = Number(process.env.ADMIN_BALANCE_TIMEOUT_MS || 1500);
 
 function dayKey(d) {
   return new Date(d).toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function withTimeout(promise, ms, fallback) {
+  let timer = null;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise(resolve => { timer = setTimeout(() => resolve(fallback), ms); })
+  ]);
 }
 
 module.exports = requireAuth(async (req, res) => {
@@ -35,7 +44,7 @@ module.exports = requireAuth(async (req, res) => {
   ]);
 
   const providerBalances = await Promise.all(providers.map(async p => {
-    const bal = await fetchKokoroBalance(p);
+    const bal = await withTimeout(fetchKokoroBalance(p), BALANCE_TIMEOUT_MS, { success: false, balance: 0, error: "balance timeout" });
     return { name: p.name, balance: bal.success ? bal.balance : null, error: bal.success ? null : bal.error };
   }));
 

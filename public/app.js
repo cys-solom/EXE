@@ -3,6 +3,22 @@
 // ============================================================
 const STATUS_LABELS = { processing: "قيد المعالجة", paid: "مدفوع", delivered: "تم التسليم", cancelled: "ملغي" };
 const TX_LABELS = { deposit: "إيداع", purchase: "شراء", manual_adjust: "تعديل يدوي", compensation: "تعويض" };
+const UI = {
+  ar: {
+    dashboard: "لوحة التحكم", activity: "سجل النشاط", broadcast: "بث رسالة", products: "منتجات KOKORO",
+    manual: "منتجاتي اليدوية", users: "المستخدمين", orders: "الطلبات", transactions: "المعاملات",
+    compensations: "التعويضات", activation: "التفعيل بالبريد", tickets: "الشكاوى", providers: "مزوّدي API",
+    refresh: "تحديث", quickOps: "مركز العمليات", quickHint: "اختصارات للمهام التي تحتاج تدخل سريع.", pendingOrders: "طلبات تنتظر التسليم",
+    openTickets: "شكاوى مفتوحة", lowStock: "مخزون يدوي منخفض", compTotal: "تعويضات ٩٠ يوم", langBtn: "EN"
+  },
+  en: {
+    dashboard: "Dashboard", activity: "Activity", broadcast: "Broadcast", products: "KOKORO Products",
+    manual: "Manual Products", users: "Users", orders: "Orders", transactions: "Transactions",
+    compensations: "Compensations", activation: "Email Activation", tickets: "Tickets", providers: "API Providers",
+    refresh: "Refresh", quickOps: "Operations Center", quickHint: "Shortcuts for work that needs fast action.", pendingOrders: "Pending deliveries",
+    openTickets: "Open tickets", lowStock: "Low manual stock", compTotal: "90-day compensation", langBtn: "AR"
+  }
+};
 const STATUS_BADGE = { processing: "badge-blue", paid: "badge-yellow", delivered: "badge-green", cancelled: "badge-red" };
 const STATUS_COLOR = { processing: "var(--primary)", paid: "var(--warning)", delivered: "var(--success)", cancelled: "var(--danger)" };
 const ACTIVITY_ICONS = {
@@ -14,19 +30,33 @@ const ACTIVITY_ICONS = {
 
 let currentProducts = []; // كاش لآخر منتجات KOKORO محمّلة
 let selectedProductIds = new Set();
+const apiCache = new Map();
+const API_CACHE_MS = 15000;
+let adminLang = localStorage.getItem("adminLang") || "ar";
 
 // ---------- Helpers ----------
 async function api(path, opts = {}) {
+  const method = opts.method || "GET";
+  const cacheKey = path;
+  const now = Date.now();
+  if (method === "GET" && !opts.force) {
+    const cached = apiCache.get(cacheKey);
+    if (cached && now - cached.t < API_CACHE_MS) return cached.v;
+  }
   const res = await fetch(`/api/${path}`, {
-    method: opts.method || "GET",
+    method,
     headers: opts.body ? { "Content-Type": "application/json" } : undefined,
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
   let json = {};
   try { json = await res.json(); } catch (e) {}
   if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  if (method === "GET") apiCache.set(cacheKey, { t: now, v: json });
+  else apiCache.clear();
   return json;
 }
+
+function clearApiCache() { apiCache.clear(); }
 
 function toast(msg, type = "success") {
   const stack = document.getElementById("toastStack");
@@ -119,6 +149,20 @@ const TAB_TITLES = {
 };
 let currentTab = "dashboard";
 
+function t(key) { return (UI[adminLang] && UI[adminLang][key]) || UI.ar[key] || key; }
+function applyAdminLanguage() {
+  document.documentElement.lang = adminLang;
+  document.documentElement.dir = adminLang === "ar" ? "rtl" : "ltr";
+  document.querySelectorAll(".nav-item").forEach(btn => {
+    const key = btn.dataset.tab;
+    const icon = btn.querySelector("svg") ? btn.querySelector("svg").outerHTML + " " : "";
+    btn.innerHTML = icon + t(key);
+  });
+  document.getElementById("pageTitle").textContent = t(currentTab);
+  document.getElementById("refreshBtn").innerHTML = `${ic("refresh")} ${t("refresh")}`;
+  document.getElementById("langToggle").textContent = t("langBtn");
+}
+
 document.querySelectorAll(".nav-item").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
@@ -126,24 +170,50 @@ document.querySelectorAll(".nav-item").forEach(btn => {
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
     currentTab = btn.dataset.tab;
     document.getElementById(`tab-${currentTab}`).classList.add("active");
-    document.getElementById("pageTitle").textContent = TAB_TITLES[currentTab];
+    document.getElementById("pageTitle").textContent = t(currentTab);
     document.querySelector(".sidebar").classList.remove("open");
     loadTab(currentTab);
   });
 });
 document.getElementById("menuToggle").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
-document.getElementById("refreshBtn").addEventListener("click", () => loadTab(currentTab));
+document.getElementById("refreshBtn").addEventListener("click", () => { clearApiCache(); loadTab(currentTab, true); });
+document.getElementById("langToggle").addEventListener("click", () => {
+  adminLang = adminLang === "ar" ? "en" : "ar";
+  localStorage.setItem("adminLang", adminLang);
+  applyAdminLanguage();
+  loadTab(currentTab);
+});
 
-function loadTab(tab) {
+function setDataStatus(text, state = "idle") {
+  const el = document.getElementById("dataStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.className = `status-pill ${state}`;
+}
+
+async function runLoader(fn) {
+  setDataStatus(adminLang === "ar" ? "تحميل..." : "Loading...", "loading");
+  const started = performance.now();
+  try {
+    await fn();
+    setDataStatus(`${adminLang === "ar" ? "تم" : "Done"} ${Math.round(performance.now() - started)}ms`, "ok");
+  } catch (e) {
+    setDataStatus(adminLang === "ar" ? "خطأ" : "Error", "error");
+    throw e;
+  }
+}
+
+function loadTab(tab, force = false) {
   const loaders = {
     dashboard: loadDashboard, activity: loadActivity, broadcast: () => {}, products: loadProducts, manual: loadManual,
     users: loadUsers, orders: loadOrders, transactions: loadTransactions, compensations: loadCompensations,
     activation: loadActivation, tickets: loadTickets,
     providers: loadProviders
   };
-  (loaders[tab] || (() => {}))();
+  runLoader(() => (loaders[tab] || (() => {}))(force)).catch(err => toast(err.message || "Load error", "error"));
 }
 function ic(name, cls = "icon") { return `<svg class="${cls}"><use href="#ic-${name}"/></svg>`; }
+applyAdminLanguage();
 
 // ---------- Support tickets ----------
 async function loadTickets() {
@@ -323,6 +393,7 @@ async function loadDashboard() {
       <div class="stat-card ${d.lowManualStock > 0 ? "warn" : ""}"><div class="stat-top"><div class="label">مخزون يدوي منخفض</div><div class="stat-icon">${ic("warning")}</div></div><div class="value">${d.lowManualStock || 0}</div></div>
       <div class="stat-card"><div class="stat-top"><div class="label">تعويضات (٩٠ يوم)</div><div class="stat-icon">${ic("gift")}</div></div><div class="value">${money(d.compensationTotal || 0)} USDT</div></div>
     `;
+    renderQuickOps(d);
     renderRevenueChart(d.chart || []);
     renderStatusBreakdown(d.statusCounts || {});
     renderMiniList("topProducts", (d.topProducts || []).map(p => ({ label: p.name, value: `${money(p.total)}$` })), "لا توجد مبيعات بعد.");
@@ -343,6 +414,27 @@ function renderMiniList(elId, rows, emptyMsg) {
   if (!rows.length) { el.innerHTML = `<div class="empty-state">${emptyMsg}</div>`; return; }
   el.innerHTML = rows.map((r, i) => `<div class="mini-list-row"><span class="rank">${i + 1}</span><span class="mn">${esc(r.label)}</span><span class="mv">${esc(r.value)}</span></div>`).join("");
 }
+
+function renderQuickOps(d) {
+  const el = document.getElementById("quickOps");
+  el.innerHTML = `
+    <div class="ops-head"><div><b>${t("quickOps")}</b><span>${t("quickHint")}</span></div></div>
+    <button class="quick-card ${d.pendingDeliveries ? "hot" : ""}" data-jump="orders" data-status="paid">${ic("clock")}<span>${t("pendingOrders")}</span><b>${d.pendingDeliveries || 0}</b></button>
+    <button class="quick-card ${d.openTickets ? "hot danger" : ""}" data-jump="tickets" data-status="open">${ic("support")}<span>${t("openTickets")}</span><b>${d.openTickets || 0}</b></button>
+    <button class="quick-card ${d.lowManualStock ? "hot" : ""}" data-jump="manual">${ic("warning")}<span>${t("lowStock")}</span><b>${d.lowManualStock || 0}</b></button>
+    <button class="quick-card" data-jump="compensations">${ic("gift")}<span>${t("compTotal")}</span><b>${money(d.compensationTotal || 0)}</b></button>
+  `;
+}
+
+document.getElementById("quickOps").addEventListener("click", e => {
+  const btn = e.target.closest("[data-jump]");
+  if (!btn) return;
+  const tab = btn.dataset.jump;
+  if (tab === "orders" && btn.dataset.status) document.getElementById("ordersStatusFilter").value = btn.dataset.status;
+  if (tab === "tickets" && btn.dataset.status) document.getElementById("ticketsStatusFilter").value = btn.dataset.status;
+  const nav = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+  if (nav) nav.click();
+});
 
 function renderStatusBreakdown(counts) {
   const el = document.getElementById("statusBreakdown");
