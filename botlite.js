@@ -84,7 +84,7 @@ global.productsRefreshPromise = null;
 global.channelMemberCache = {};
 
 const USER_CACHE_MS = Number(process.env.USER_CACHE_MS || 15000);
-const PRODUCTS_CACHE_MS = Number(process.env.PRODUCTS_CACHE_MS || 300000);
+const PRODUCTS_CACHE_MS = Number(process.env.PRODUCTS_CACHE_MS || 15000);
 const CHANNEL_CACHE_MS = Number(process.env.CHANNEL_CACHE_MS || 60000);
 const CHANNEL_CHECK_TIMEOUT_MS = Number(process.env.CHANNEL_CHECK_TIMEOUT_MS || 1000);
 const START_DB_TIMEOUT_MS = Number(process.env.START_DB_TIMEOUT_MS || 500);
@@ -999,14 +999,17 @@ function nextBulkHint(p, qty, t) {
 async function fetchShopProductsFresh() {
   const out = [];
   const [{ data: apiProds, error: apiErr }, { data: manProds, error: manErr }] = await Promise.all([
-    supabase.from("products").select("*").eq("enabled", true).gt("stock", 0).order("name"),
+    supabase.from("products").select("*").gt("stock", 0).order("name"),
     supabase.from("products_manual").select("*").eq("enabled", true).order("name")
   ]);
   if (apiErr) console.error("[SHOP] products query error:", apiErr.message);
   if (manErr) console.error("[SHOP] products_manual query error:", manErr.message);
-  (apiProds || []).forEach(p => out.push(mapKokoroProductRow(p)));
+  const enabledApiProds = (apiProds || []).filter(p => p.enabled !== false);
+  enabledApiProds.forEach(p => out.push(mapKokoroProductRow(p)));
 
-  if (!out.length) {
+  // Live fallback is only for a new/empty DB or a failed Supabase products query.
+  // If products exist but the owner disabled them, respect that decision.
+  if (!out.length && (apiErr || !(apiProds || []).length)) {
     try {
       let providers = await getActiveProviders(supabase);
       if (!providers.length) {
@@ -1050,7 +1053,7 @@ async function fetchShopProductsFresh() {
       description_es: p.description_es, description_en: p.description_en
     });
   }
-  if (out.length) global.productsCache = { data: out, time: Date.now() };
+  global.productsCache = { data: out, time: Date.now() };
   return out;
 }
 
@@ -1065,16 +1068,31 @@ function refreshProductsInBackground() {
   return global.productsRefreshPromise;
 }
 
-async function getShopProducts() {
+async function getShopProducts(force = false) {
   const cached = global.productsCache;
-  if (cached.data && cached.data.length) {
+  if (!force && cached.data && cached.data.length) {
     if (Date.now() - cached.time >= PRODUCTS_CACHE_MS) refreshProductsInBackground();
     return cached.data;
   }
   return fetchShopProductsFresh();
 }
 function sess(chatId) { global.sessions[chatId] = global.sessions[chatId] || {}; return global.sessions[chatId]; }
-async function loadProducts(chatId) { const p = await getShopProducts(); sess(chatId).products = p; return p; }
+async function loadProducts(chatId, force = false) { const p = await getShopProducts(force); sess(chatId).products = p; return p; }
+
+function sameProduct(a, b) {
+  if (!a || !b || a.kind !== b.kind) return false;
+  if (a.kind === "manual") return String(a.manualId) === String(b.manualId);
+  return String(a.id) === String(b.id);
+}
+
+async function getFreshSessionProduct(chatId, index) {
+  const oldProduct = (sess(chatId).products || [])[index];
+  const products = await loadProducts(chatId, true);
+  if (!oldProduct) return { products, index, product: products[index] };
+  const freshIndex = products.findIndex(p => sameProduct(p, oldProduct));
+  if (freshIndex === -1) return { products, index: -1, product: null };
+  return { products, index: freshIndex, product: products[freshIndex] };
+}
 
 // ============================================================
 //  Pantalla: Menu principal (home)
@@ -1123,7 +1141,7 @@ async function showShop(chatId, messageId) {
   // Mostrar rayito de carga mientras se traen los productos
   const loadingStartedAt = Date.now();
   const loadingPromise = SHOP_LOADING ? showLoadingSticker(chatId) : Promise.resolve(null);
-  let products = await loadProducts(chatId);
+  let products = await loadProducts(chatId, true);
   const loadingMsgId = await loadingPromise;
   // Borrar el rayito cuando los productos ya cargaron
   const waitMs = SHOP_LOADING ? SHOP_LOADING_MIN_MS - (Date.now() - loadingStartedAt) : 0;
@@ -1417,7 +1435,7 @@ async function showApiTokensCategory(chatId, messageId = null) {
 // fresco (no depende de una sesion previa) y salta directo a ese producto.
 async function goToProductFromBroadcast(chatId, messageId, key) {
   const [kind, rawId] = key.split(/_(.+)/); // "manual_5" -> ["manual", "5"]
-  const products = await loadProducts(chatId);
+  const products = await loadProducts(chatId, true);
   const index = products.findIndex(p =>
     kind === "manual" ? (p.kind === "manual" && String(p.manualId) === String(rawId))
       : (p.kind === "kokoro" && String(p.id) === String(rawId))
@@ -1435,7 +1453,9 @@ async function goToProductFromBroadcast(chatId, messageId, key) {
 async function showDescription(chatId, messageId, index) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
-  const p = (sess(chatId).products || [])[index];
+  const fresh = await getFreshSessionProduct(chatId, index);
+  index = fresh.index;
+  const p = fresh.product;
   if (!p) return showShop(chatId, messageId);
   sess(chatId).current = index;
 
@@ -1474,7 +1494,9 @@ async function showDescription(chatId, messageId, index) {
 async function showQuantity(chatId, messageId, index, qty) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
-  const p = (sess(chatId).products || [])[index];
+  const fresh = await getFreshSessionProduct(chatId, index);
+  index = fresh.index;
+  const p = fresh.product;
   if (!p) return showShop(chatId, messageId);
 
   const minOrder = p.min_order || 1;
@@ -1515,7 +1537,9 @@ async function showQuantity(chatId, messageId, index, qty) {
 async function showPaymentMethods(chatId, messageId, index, qty) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
-  const p = (sess(chatId).products || [])[index];
+  const fresh = await getFreshSessionProduct(chatId, index);
+  index = fresh.index;
+  const p = fresh.product;
   if (!p) return showShop(chatId, messageId);
   sess(chatId).current = index;
   sess(chatId).qty = qty;
@@ -1667,7 +1691,9 @@ async function fulfillManual(manualId, qty, chatId, orderId) {
 async function showBalanceConfirm(chatId, messageId, index, qty) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
-  const p = (sess(chatId).products || [])[index];
+  const fresh = await getFreshSessionProduct(chatId, index);
+  index = fresh.index;
+  const p = fresh.product;
   if (!p) return showShop(chatId, messageId);
   const total = lineTotal(p, qty);
   const profile = await getUserProfile(chatId);
@@ -1697,7 +1723,9 @@ async function showBalanceConfirm(chatId, messageId, index, qty) {
 async function buyWithBalance(chatId, messageId, index, qty) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
-  const p = (sess(chatId).products || [])[index];
+  const fresh = await getFreshSessionProduct(chatId, index);
+  index = fresh.index;
+  const p = fresh.product;
   if (!p) return showShop(chatId, messageId);
   const total = lineTotal(p, qty);
 
@@ -1765,7 +1793,9 @@ async function buyWithBalance(chatId, messageId, index, qty) {
 async function showBinancePayment(chatId, messageId, index, qty) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
-  const p = (sess(chatId).products || [])[index];
+  const fresh = await getFreshSessionProduct(chatId, index);
+  index = fresh.index;
+  const p = fresh.product;
   if (!p) return showShop(chatId, messageId);
   const total = lineTotal(p, qty);
   const pe = productTextEmoji(p.name);
@@ -1806,7 +1836,9 @@ async function showBinancePayment(chatId, messageId, index, qty) {
 async function showBep20PaymentDirect(chatId, messageId, index, qty) {
   const lang = await getUserLanguage(chatId);
   const t = L(lang);
-  const p = (sess(chatId).products || [])[index];
+  const fresh = await getFreshSessionProduct(chatId, index);
+  index = fresh.index;
+  const p = fresh.product;
   if (!p) return showShop(chatId, messageId);
   const total = lineTotal(p, qty);
   const pe = productTextEmoji(p.name);
