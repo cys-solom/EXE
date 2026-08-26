@@ -1,4 +1,31 @@
-const { getSupabaseStatus, checkSupabaseConnection } = require("./_lib/supabase.js");
+const { getSupabase, getSupabaseStatus, checkSupabaseConnection } = require("./_lib/supabase.js");
+
+const REQUIRED_TABLES = [
+  "users",
+  "api_providers",
+  "products",
+  "products_manual",
+  "stock_manual",
+  "orders",
+  "transactions",
+  "bep20_pending",
+  "binance_payments",
+  "email_activation_products",
+  "admin_activity_log",
+  "support_tickets"
+];
+
+async function checkSchema() {
+  const supabase = getSupabase();
+  const checks = await Promise.all(REQUIRED_TABLES.map(async table => {
+    const { error } = await supabase.from(table).select("id", { count: "exact", head: true });
+    return { table, ok: !error, error: error ? error.message : null };
+  }));
+  return {
+    ok: checks.every(c => c.ok),
+    tables: checks
+  };
+}
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -8,12 +35,21 @@ module.exports = async function handler(req, res) {
 
   const supabase = getSupabaseStatus();
   const connection = await checkSupabaseConnection();
+  let schema = null;
+  if (connection.ok) {
+    try {
+      schema = await checkSchema();
+    } catch (err) {
+      schema = { ok: false, error: err.message || String(err) };
+    }
+  }
 
   return res.status(200).json({
     ok: true,
     supabase: {
       ...supabase,
-      connection
+      connection,
+      schema
     },
     admin: {
       hasUser: !!process.env.ADMIN_PANEL_USER,
