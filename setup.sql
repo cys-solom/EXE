@@ -28,6 +28,7 @@ ALTER TABLE users ALTER COLUMN language SET DEFAULT 'ar';
 CREATE TABLE IF NOT EXISTS api_providers (
   id            BIGSERIAL PRIMARY KEY,
   name          TEXT NOT NULL,                    -- nombre interno (solo lo ves vos en el panel)
+  provider_type TEXT DEFAULT 'kokoro',            -- 'kokoro' o 'xpro'
   base_url      TEXT NOT NULL,
   api_key       TEXT NOT NULL,
   active        BOOLEAN DEFAULT true,
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS api_providers (
 );
 -- Evita crear el proveedor default dos veces si dos procesos arrancan a la vez:
 CREATE UNIQUE INDEX IF NOT EXISTS api_providers_one_default ON api_providers ((is_default)) WHERE is_default = true;
+ALTER TABLE api_providers ADD COLUMN IF NOT EXISTS provider_type TEXT DEFAULT 'kokoro';
 
 -- ------------------------------------------------------------
 -- 2) PRODUCTOS (se sincronizan desde los proveedores activos cada 5 min)

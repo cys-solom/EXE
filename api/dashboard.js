@@ -1,6 +1,6 @@
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
-const { fetchKokoroBalance } = require("../services/kokoroApi.js");
+const { fetchProviderBalance } = require("../services/kokoroApi.js");
 const { getActiveProviders } = require("../services/sync.js");
 
 const CHART_DAYS = 14;
@@ -44,7 +44,7 @@ module.exports = requireAuth(async (req, res) => {
   ]);
 
   const providerBalances = await Promise.all(providers.map(async p => {
-    const bal = await withTimeout(fetchKokoroBalance(p), BALANCE_TIMEOUT_MS, { success: false, balance: 0, error: "balance timeout" });
+    const bal = await withTimeout(fetchProviderBalance(p), BALANCE_TIMEOUT_MS, { success: false, balance: 0, error: "balance timeout" });
     return { name: p.name, balance: bal.success ? bal.balance : null, error: bal.success ? null : bal.error };
   }));
 

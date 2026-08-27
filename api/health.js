@@ -16,6 +16,7 @@ const REQUIRED_TABLES = [
 ];
 
 const REQUIRED_COLUMNS = {
+  api_providers: ["provider_type"],
   products: ["sort_order"],
   products_manual: ["sort_order"]
 };

@@ -19,7 +19,7 @@ if (typeof globalThis.WebSocket === "undefined") {
 const TelegramBot = require("node-telegram-bot-api");
 const { createClient } = require("@supabase/supabase-js");
 
-const { fetchKokoroProducts, fetchKokoroBalance, purchaseKokoro, defaultProviderFromEnv } = require("./services/kokoroApi.js");
+const { fetchProviderProducts, fetchProviderBalance, purchaseProvider, defaultProviderFromEnv } = require("./services/kokoroApi.js");
 const { productIcon, productTextEmoji } = require("./services/emojis.js");
 const { startProductSync, getActiveProviders } = require("./services/sync.js");
 const payments = require("./services/payments.js");
@@ -989,6 +989,13 @@ function mapLiveKokoroProduct(provider, p) {
   };
 }
 
+function envProviderFallbacks() {
+  const providers = [];
+  const kokoro = defaultProviderFromEnv();
+  if (kokoro.api_key) providers.push({ ...kokoro, id: null, active: true, is_default: true });
+  return providers;
+}
+
 // Bloque visual de "Descuentos por Volumen" (igual que el bot principal).
 function bulkDiscountBlock(p, t) {
   const tiers = (Array.isArray(p.bulk_discounts) ? p.bulk_discounts : [])
@@ -1050,12 +1057,11 @@ async function fetchShopProductsFresh() {
     try {
       let providers = await getActiveProviders(supabase);
       if (!providers.length) {
-        const def = defaultProviderFromEnv();
-        console.warn(`[SHOP] No active providers from Supabase. envProvider=${def.api_key ? "yes" : "no"}`);
-        if (def.api_key) providers = [{ ...def, id: null, active: true, is_default: true }];
+        providers = envProviderFallbacks();
+        console.warn(`[SHOP] No active providers from Supabase. envProviders=${providers.length}`);
       }
       for (const provider of providers) {
-        const live = await fetchKokoroProducts(provider);
+        const live = await fetchProviderProducts(provider);
         if (!live.success) {
           console.error(`[SHOP] live products error (${provider.name}):`, live.error);
           continue;
@@ -1706,7 +1712,7 @@ async function resolveProvider(providerId) {
 async function fulfillOrder(p, qty, chatId, orderId) {
   if (p.kind === "manual") return fulfillManual(p.manualId, qty, chatId, orderId);
   const provider = await resolveProvider(p.providerId);
-  const res = await purchaseKokoro(provider, p.nativeId || p.id, qty, `LITE-${orderId}`);
+  const res = await purchaseProvider(provider, p.nativeId || p.id, qty, `LITE-${orderId}`);
   // res.orderId = número de orden del proveedor (para reclamar si algo pasa)
   return res.success
     ? { success: true, content: res.credentials, kokoroOrderId: res.orderId || null }
@@ -2660,10 +2666,11 @@ payments.startBep20Poller(supabase, {
   // Espera un momento a que termine la primera sincronizacion (crea el proveedor
   // default si hace falta) antes de listar los proveedores activos.
   await sleep(1500);
-  const providers = await getActiveProviders(supabase);
+  let providers = await getActiveProviders(supabase);
+  if (!providers.length) providers = envProviderFallbacks();
   if (!providers.length) { console.log("[KOKORO] No hay proveedores de API activos configurados."); return; }
   for (const provider of providers) {
-    const bal = await fetchKokoroBalance(provider);
+    const bal = await fetchProviderBalance(provider);
     if (bal.success) console.log(`[KOKORO] Saldo prepago (${provider.name}): ${money(bal.balance)} USDT`);
     else console.log(`[KOKORO] No se pudo leer el saldo de "${provider.name}": ${bal.error}`);
   }

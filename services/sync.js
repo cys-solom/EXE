@@ -5,7 +5,7 @@
 //  propio y el tipo de markup del revendedor para cada producto.
 // ============================================================
 require("dotenv").config();
-const { fetchKokoroProducts, defaultProviderFromEnv } = require("./kokoroApi.js");
+const { fetchProviderProducts, defaultProviderFromEnv, xproProviderFromEnv } = require("./kokoroApi.js");
 
 const SYNC_MINUTES = Number(process.env.SYNC_INTERVAL_MINUTES || 5);
 
@@ -17,6 +17,13 @@ function defaultProviderFallback(reason) {
   }
   if (reason) console.warn(`[SYNC] Usando proveedor default de .env: ${reason}`);
   return [{ ...def, id: null, active: true, is_default: true }];
+}
+
+function envProvidersFallback() {
+  const providers = [];
+  const kokoro = defaultProviderFromEnv();
+  if (kokoro.api_key) providers.push({ ...kokoro, id: null, active: true, is_default: true });
+  return providers;
 }
 
 // Devuelve los proveedores activos. Si no hay ninguno en la tabla todavia,
@@ -32,10 +39,20 @@ async function getActiveProviders(supabase) {
   if (anyRow && anyRow.length) return []; // hay proveedores pero ninguno activo: respeta esa decision
 
   const def = defaultProviderFromEnv();
-  if (!def.api_key) return []; // sin .env y sin proveedores configurados: nada que sincronizar
+  const xpro = xproProviderFromEnv();
+  if (!def.api_key && !xpro.api_key) return []; // sin .env y sin proveedores configurados: nada que sincronizar
+
+  if (!def.api_key && xpro.api_key) {
+    const { data: createdXpro, error: xproErr } = await supabase.from("api_providers").insert({
+      name: xpro.name, base_url: xpro.base_url, api_key: xpro.api_key, provider_type: "xpro", active: true, is_default: false
+    }).select().single();
+    if (!xproErr && createdXpro) return [createdXpro];
+    console.error("[SYNC] No se pudo crear el proveedor XPro desde .env:", xproErr && xproErr.message);
+    return [];
+  }
 
   const { data: created, error } = await supabase.from("api_providers").insert({
-    name: def.name, base_url: def.base_url, api_key: def.api_key, active: true, is_default: true
+    name: def.name, base_url: def.base_url, api_key: def.api_key, provider_type: "kokoro", active: true, is_default: true
   }).select().single();
   if (error) {
     // Otro proceso ya lo creo en paralelo (choque con el indice unico de is_default): releer.
@@ -43,7 +60,8 @@ async function getActiveProviders(supabase) {
     if (race && race.length) return race;
     if (raceErr) return defaultProviderFallback(raceErr.message);
     console.error("[SYNC] No se pudo crear el proveedor default:", error.message);
-    return defaultProviderFallback(error.message);
+    const fallback = envProvidersFallback();
+    return fallback.length ? fallback : defaultProviderFallback(error.message);
   }
   return [created];
 }
@@ -59,7 +77,7 @@ async function syncProductsOnce(supabase) {
   let totalFetched = 0, totalUpdated = 0;
 
   for (const provider of providers) {
-    const { success, products, error } = await fetchKokoroProducts(provider);
+    const { success, products, error } = await fetchProviderProducts(provider);
     if (!success) {
       console.error(`[SYNC] No se pudieron traer productos de "${provider.name}": ${error}`);
       continue;
