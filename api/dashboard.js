@@ -1,6 +1,7 @@
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
-const { fetchProviderBalance } = require("../services/kokoroApi.js");
+const providerApi = require("../services/kokoroApi.js");
+const fetchProviderBalance = providerApi.fetchProviderBalance || providerApi.fetchKokoroBalance;
 const { getActiveProviders } = require("../services/sync.js");
 
 const CHART_DAYS = 14;

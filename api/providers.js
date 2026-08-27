@@ -2,7 +2,8 @@
 const { requireAuth } = require("./_lib/auth.js");
 const { getSupabase } = require("./_lib/supabase.js");
 const { logActivity } = require("./_lib/activity.js");
-const { fetchProviderBalance } = require("../services/kokoroApi.js");
+const providerApi = require("../services/kokoroApi.js");
+const fetchProviderBalance = providerApi.fetchProviderBalance || providerApi.fetchKokoroBalance;
 const BALANCE_TIMEOUT_MS = Number(process.env.ADMIN_BALANCE_TIMEOUT_MS || 1500);
 
 function maskKey(key) {
